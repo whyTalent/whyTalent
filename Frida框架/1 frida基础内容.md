@@ -278,9 +278,15 @@ frida-server在运行时需要root环境，但如果没有越狱的设备，依�
 
 Frida 支持一下基础工具：
 
-1）`frida-ls-devices`：查看可用的设备列表
+### 1）frida-ls-devices
 
-2）`frida-ps`：获取设备进程列表信息
+查看可用的设备列表
+
+   
+
+### 2）frida-ps
+
+获取设备进程列表信息
 
 <div align="center"><img src="
   imgs/frida-ps.png" alt="frida-ps" style="zoom:80%;" /></div>
@@ -301,7 +307,11 @@ frida-ps -U -a -i
 frida-ps -D xxxxxx -a
 ```
 
-3）`frida-kill`：结束/杀死设备上的指定进程
+​     
+
+### 3）frida-kill
+
+结束/杀死设备上的指定进程
 
 ```shell
 # usage: frida-kill [options] process
@@ -312,7 +322,11 @@ frida-kill -D xxxxxxxxx 26745
 frida-kill -D xxxxxxxxx Twitter
 ```
 
-4）`frida-trace`：跟踪函数或方法的调用
+​     
+
+### 4）frida-trace
+
+跟踪函数或方法的调用
 
 ```shell
 # usage: frida-trace [options] target
@@ -335,10 +349,18 @@ frida-trace -U -m "-[T1HomeTimelineItemsViewController _load*]" -M "-[T1HomeTime
 console.log('\tBacktrace:\n\t' + Thread.backtrace(this.context, Backtracer.ACCURATE).map(DebugSymbol.fromAddress).join('\n\t'));
 ```
 
-5）交互模式
+​    
+
+### 5）frida CLI
+
+交互模式
 
 ```shell
 # 提供了两种进入交互模式的方式
+# 参数
+# -l 指定加载一个Javascript脚本
+# -U 指定对USB设备操作
+# frida运行过程中，执行%resume重新注入，执行%reload来重新加载脚本；执行exit结束脚本注入
 
 # a. 通过应用名或 PID 附加, 应用于 App 已打开的情况下附加的情景
 frida -U Twitter
@@ -410,6 +432,7 @@ API 列表：
 3. [这恐怕是学习Frida最详细的笔记了](https://juejin.cn/post/6847902219757420552)
 3. [Frida 二次开发工具 objection](https://book.hacktricks.xyz/mobile-pentesting/ios-pentesting/ios-hooking-with-objection)
 3. [Frida 安装和使用](https://www.jianshu.com/p/bab4f4714d98)
+3. [frida的用法--Hook Java代码篇](https://www.jianshu.com/p/f98aca8f3c05)
 
 ​     
 
