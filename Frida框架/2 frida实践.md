@@ -1,8 +1,643 @@
-# frida实践
+# Frida实践
+
+Frida分客户端环境和服务端环境
+
+* 客户端：编写Python代码，用于连接远程设备，提交要注入的代码到远程，接受服务端的发来的消息等;
+* 服务端：需要用Javascript代码注入到目标进程，操作内存数据，给客户端发送消息等操作
+
+也可以把客户端理解成控制端，服务端理解成被控端，假如要用PC来对Android设备上的某个进程进行操作，那么PC就是客户端，而Android设备就是服务端。 
+
+  
+
+# 一、frida自动化基础
+
+   
+
+## 1、frida  Javascript 引擎
+
+1）由于 iOS 的 JIT 限制，以及嵌⼊式设备的内存压⼒，新版将默认脚 本引擎从 V8 迁移⾄ Duktape
+
+2）在 Android 等⽀持 v8 的平台上仍然可以使⽤ enable-jit 选项切换回 v8 
+
+3）Duktape ⽐ v8 缺失了⾮常多 ECMAScript 6 特性，如箭头表达式、 let 关键字
+
+> **箭头函数**
+>
+> * ECMAScript 6 引⼊的书写匿名函数的特性
+> * 需要启⽤ JIT，或 frida-compile 转译才可在 frida 中使⽤ 
+> * ⽐ function 表达式简洁。适合编写逻辑较短的回调函数
+> * 语义并⾮完全等价。箭头函数中的 this 指向⽗作⽤域中的上下⽂；⽽ function 可以通过 Function.prototype.bind ⽅法指定上下⽂
+
+4）frida --debug 启⽤调试需使⽤ Duktape，不兼容 v8-inspector
+
+5）以下代码等价
+
+```javascript
+// 普通函数
+Process.enumerateModulesSync().filter(function(module) { return
+module.path.startsWith('/Applications') }) 
+
+// 箭头函数
+Process.enumerateModulesSync().filter(module => module.path.startsWith('/
+Applications'))
+```
+
+​      
+
+## 2、npm && frida-compile
+
+**命令参数 **
+
+* -o 输出⽂件名
+* -w 监视模式，源⽂件改动后⽴即编译 
+* -c 开启 uglify 脚本压缩 
+* -b 输出字节码 
+* -h 查看完整命令⾏⽤法 
+* -x, —no-babelify 关闭 babel 转译
+
+​     
+
+**特点**
+
+> 1）需求
+>
+> * 默认使⽤的 Duktape 不⽀持最新的 ECMAScript 特性
+> * 单个 js ⽂件，难以管理⼤型项⽬
+>
+> 2）可将 TypeScript 或 ES6 转译成 Duktape 可⽤的 ES5 语法
+>
+> 3）⽀持 Browserify 的打包，⽀持 ES6 modules、source map 和 uglify 代码压缩。甚⾄ 可⽣成 Duktape 字节
+>
+> 4）⽀持使⽤ require 或 es6 module 引⽤第三⽅ npm 包
+>
+> 5）frida-compile 是 npm 包，需要 node.js 运⾏环境，与 frida-python 不冲突，可同时安 装使⽤。其中，在npm 内可创建⽬录结构、安装依赖，并可在 package.json 中添加构建脚本
+>
+> 6）使⽤ TypeScript 可享受到类型系统带来的⼤型项⽬管理便利
+>
+> 7）Babel 添加插件⽀持⾼级的语法特性（generator / async-await）
+
+​       
+
+**补充**：[npm package.json文件介绍](https://segmentfault.com/a/1190000022329597)
+
+> 1）创建package.json文件：使用 `npm init` 即可在当前目录创建一个 `package.json` 文件，依次确认即可创建。或`npm init --yes` 跳过回答问题步骤，直接生成默认值的 `package.json` 文件
+>
+> 2）基础属性：
+>
+> * name：全部小写，没有空格，可以使用下划线或者横线
+>
+> * version：x.x.x 的格式
+>
+> * description：描述信息，有助于搜索
+>
+> * main: 入口文件，一般都是 index.js
+>
+> * keywords：关键字，有助于在人们使用 npm search 搜索时发现你的项目
+>
+> * author：作者信息
+>
+> * license：默认是 MIT
+>
+> * bugs：当前项目的一些错误信息
+>
+> * 指定依赖包：指定项目依赖的包，通过`npm install` 默认下载
+>
+>   * `dependencies`：在生产环境中需要用到的依赖
+>   * `devDependencies`：在开发、测试环境中用到的依赖
+>
+> * scripts：指定了运行脚本命令的npm命令行缩写，比如：start 指定了运行`npm run start`时，所要执行的命令
+>
+>   ```typescript
+>   "scripts": {
+>       "prepare": "npm run build",  // npm run prepare
+>       "preinstall": "echo here it comes!",  // npm run preinstall
+>       "postinstall": "echo there it goes!", // npm run postinstall
+>       "start": "node index.js",  // npm run start
+>       "test": "tap test/*.js"    // npm run test
+>   }
+>   ```
+
+​         
+
+## 3、frida session实例的生命周期
+
+<div align="center"><img src="imgs/session生命周期.png" alt="session生命周期" style="zoom:80%;" /></div>
+
+​     
+
+## 4、firda 平台实践
+
+  
+
+### 4.1 frida on Android
+
+frida-java 是 frida 内置库，即 Java 命名空间下的函数，可对 ART 和 Dalvik 运⾏时插桩（源代码 github/frida/frida-java）。其次，在 frida 框架基础上完全由 javascript 实现，frida-gum 只实现了通⽤的⼆进制插桩。总的来说，frida-java通过两步实现js世界到java世界的单向通道，首先利用frida-gum提供的js接口操作native世界，然后再基于jni连通到java世界。
+
+<div align="center"><img src="imgs/frida-Java.png" alt="frida-java" style="zoom:100%;" /></div>
+
+​     
+
+#### 1）操作对象或字段
+
+##### a. 操作对象 
+
+frida 既可以 new 对象实例，也可以搜索已有的对象
+
+* `$new`：new 运算符，初始化新对象。注意与 $init 区分
+* `$alloc`：分配内存，但不初始化
+* `$init`：构造器⽅法，⽤来 hook, ⽽不是给 js 调⽤
+* `$dispose`：析构函数
+* `$isSameObject`：是否与另⼀个 Java 对象相同
+* `$className`：类名
+
+```typescript
+if (!Java.available) 
+ 	throw new Error('requires Android'); 
+
+Java.perform(function() { 
+	const JavaString = Java.use('java.lang.String'); 
+	var exampleString1 = JavaString.$new('Hello World, this is an example string in Java.'); 
+	console.log('[+] exampleString1: ' + exampleString1); 
+	console.log('[+] exampleString1.length(): ' + exampleString1.length()); 
+});
+```
+
+​      
+
+##### b. 访问 / 修改对象成员
+
+`instance.field.value = newValue`，这种⽅式不区分成员可⻅性，即使是私有成员同样可以直接访问，其次除 value 的 `setter` 和 `getter` 之外，`fieldType` 和 `fieldReturnType` 获取类型信息
+
+```typescript
+// 字段赋值和读取要在字段名后加.value，假设有这样的一个类
+package com.luoyesiqiu.app;
+public class Person{
+    private String name;
+    private int age;
+}
+
+// 操作Person类的name字段和age字段
+var person_class = Java.use("com.luoyesiqiu.app.Person");
+// 实例化Person类
+var person_class_instance = person_class.$new();
+
+// 给name字段赋值
+person_class_instance.name.value = "luoyesiqiu";
+// 给age字段赋值
+person_class_instance.age.value = 18;
+
+// 输出name字段和age字段的值
+console.log("name = ",person_class_instance.name.value, "," ,"age = " ,person_class_instance.age.value);
+```
+
+​      
+
+frida 对数组做了封装，直接取下标即可访问
+
+```typescript
+// 注意 instance 和 Class 的区别
+// Java.choose 找到实例后查询字段的类型
+Java.perform(function () { 
+	var MainActivity = Java.use('com.example.seccon2015.rock_paper_scissors.MainActivity'); 
+    
+	Java.choose(MainActivity.$className, { 
+		onMatch: function(instance) { 
+			console.log(JSON.stringify(instance.P.fieldReturnType));
+		}, 
+ 		onComplete: function() {} 
+	}); 
+}) 
+```
+
+​        
+
+#### 2）修改函数实现 Hook Java
+
+修改一个函数的实现后，如果这个函数被调用，则avascript代码里的函数实现也会被调用
+
+> **Java 层的插桩**：
+>
+> ```typescript
+> // 格式
+> Java.use().method.implementation = hookCallback
+> 
+> // 由于 Java ⽀持同名⽅法重载，需要⽤ .overload 确定具体的⽅法
+> Java.use('java.lang.String').$new.overload('[B', 'java.nio.charset.Charset')
+> ```
+>
+> **JNI 层插桩**：JNI 实现在 so 中，且符号必然是导出函数，照常使⽤Interceptor 即可
+
+​         
+
+##### a. 函数参数类型表示
+
+基本类型缩写表示表：
+
+<div align="center"><img src="imgs/基本类型缩写.png" alt="基本类型缩写" style="zoom:80%;" /></div>
+
+注意：
+
+> `int[]`类型：重载时要写成`[I`
+>
+> 任意类：直接写完整类名即可，比如：`java.lang.String`
+>
+> 对象数组：用左中括号接上完整类名再接上分号 `[java.lang.String;`
+
+   
+
+##### b. 带参数构造函数
+
+```typescript
+// 修改参数为byte[]类型的构造函数的实现
+ClassName.$init.overload('[B').implementation=function(param){
+    //do something
+}
+
+// 修改多参数的构造函数的实现
+ClassName.$init.overload('[B','int','int').implementation=function(param1,param2,param3){
+    //do something
+}
+```
+
+**注：**ClassName是使用 Java.use 定义的类，param是可以在函数体中访问的参数
 
 ​    
 
-# 一、frida python实践
+##### c. 无参构造函数
+
+```typescript
+// 默认格式
+ClassName.$init.overload().implementation=function(){
+    //do something
+}
+
+// 调用原构造函数
+ClassName.$init.overload().implementation=function(){
+    //do something
+    this.$init();
+    //do something
+}
+```
+
+**注**：当构造函数（函数）有多种重载形式，比如一个类中有两个形式的func：`void func()` 和 `void func(int)`，要加上 ***overload来对函数进行重载***，否则可以省略overload    
+
+​     
+
+##### d. 普通函数 & 无参函数
+
+```typescript
+// 修改函数名为func，参数为byte[]类型的函数的实现
+ClassName.func.overload('[B').implementation=function(param){
+    //do something
+    //return ...
+}
+
+// 无参数的函数
+ClassName.func.overload().implementation=function(){
+    //do something
+}
+
+// 带返回值, 则hook时也应有返回值
+ClassName.func.overload().implementation=function(){
+    //do something
+    return this.func();
+}
+```
+
+**注**： 在修改函数实现时，如果原函数有返回值，那么我们在实现时也要返回合适的值
+
+​     
+
+#### 3）函数调用
+
+```typescript
+// 和Java一样，创建类实例就是调用构造函数，而在这里用$new表示一个构造函数
+var ClassName = Java.use("com.luoye.test.ClassName");
+var instance = ClassName.$new();
+
+// 实例化以后调用其他函数
+var ClassName = Java.use("com.luoye.test.ClassName");
+var instance = ClassName.$new();
+instance.func();
+```
+
+​      
+
+#### 4）获取调用堆栈
+
+Android 提供了⼯具函数可以打印 Exception 的堆栈，此⽅式等价 于 Log.getStackTraceString(new Exception)
+
+```typescript
+Java.perform(function () { 
+	const Log = Java.use('android.util.Log'); 
+	const Exception = Java.use('java.lang.Exception'); 
+	const MainActivity = Java.use('com.example.seccon2015.rock_paper_scissors.MainActivity');
+    
+    MainActivity.onClick.implementation = function(v) { 
+		this.onClick(v); 
+		console.log(Log.getStackTraceString(Exception.$new())); 
+	}; 
+}); 
+```
+
+​      
+
+### 4.2 frida on iOS
+
+**frida-objc**：对应 Java，ObjC api 是 frida 的另⼀个“⼀等公⺠”，源代码 github/frida/frida-objc，与 JVM 类似，Objective C 也提供了 runtime api，其次frida 将 Objective C 的部分 runtime api 提供到 ObjC.api 中
+
+   
+
+#### 1）特点
+
+与 Java 显著不同，frida-objc 将所有 class 信息保存到 `ObjC.classes`  中，直接对其 for in 遍历 key 即可
+
+```typescript
+// Objective C 实现
+[NSString stringWithString:@"Hello World”]
+
+// 对应 frida
+var NSString = ObjC.classes.NSString; 
+NSString.stringWithString_("Hello World”);
+```
+
+`new ObjC.Object` 可以将指针转换为 Objective C 对象，但如果指针不是合法的对象或合法的地址，将抛出异常或导致未定义⾏为
+
+​    
+
+#### 2）hook objective C
+
+firda提供了3种方式hook objective C方法：
+
+> 1）`ObjC.classes.Class.method` 以及 `ObjC.Block` ：都提供了⼀个 `.implementation` 的 setter 来 hook ⽅法实现，实际上就是 iOS 开发者熟悉的 Method Swizzling
+>
+> 2）使⽤拦截器  `Interceptor.attach(ObjC.classes.Class.method.implementation)`，看上去很相似，但实现原理是对 selector 指向的代码进⾏ inline hook
+>
+> 3）Proxy 也是 Objective C 当中的⼀种 hook ⽅式，其次frida 提供了ObjC.registerClass 来创建 Proxy
+
+​        
+
+##### a. ObjC.classes.Class.method 
+
+**格式**：ObjC.classes.className["funcName"]
+
+其中，className指具体的类名称，funcName指类方法名称
+
+```typescript
+const { AVModel } = ObjC.classes;
+
+// 获取函数内存地址
+const oldImpl = AVModel["- getDataGotoType"].implementation
+// 函数替换
+AVModel["- getDataGotoType"].implementation = ObjC.implement(AVModel["- getDataGotoType"], (handle, selector) => {
+  console.log("AVModel.getDataGotoType hooked")
+  // 返回值替换
+  return ObjC.classes.NSString.stringWithString_("hello, world");
+});
+
+// 初始化对象
+const model = AVModel.alloc().init();
+// 调用对象为 hook 函数
+console.log(model.getDataGotoType());
+// 解除 hook
+AVModel["- getDataGotoType"].implementation = oldImpl;
+// 调用原函数
+console.log(model.getDataGotoType());
+
+```
+
+​     
+
+##### b. ObjC.Block 
+
+   
+
+
+
+##### c. Interceptor 拦截器
+
+**格式**：Interceptor.attach(target, callbacks[, data])
+
+​    
+
+###### 拦截C函数
+
+>  fopen 函数：其功能是使用给定的模式 mode 打开 filename 所指向的文件，如果文件打开成功，会返回一个指针，相当于句柄。如果文件打开失败则返回 0
+>
+> 原型如下：
+>
+> ```c
+> FILE *fopen(const char *filename, const char *mode)
+> ```
+
+​    
+
+```typescript
+// a. 底层系统函数
+Interceptor.attach(Module.findExportByName(null, "fopen"), {
+ 	// onEnter 是进入 fopen 函数时要执行的代码
+    onEnter: function(args) {
+        if (args[0].isNull()) return;
+        var path = args[0].readUtf8String();
+        console.log("fopen " + path);
+ 
+    },
+    // onLeave 是离开 fopen 函数时要执行的代码
+    onLeave: function(retval) {
+        console.log("\t[-] Type of return value: " + typeof retval);
+        console.log("\t[-] Original Return Value: " + retval);
+        retval.replace(0);  //将返回值替换成0
+        console.log("\t[-] New Return Value: " + retval);
+    },
+})
+
+// b. 自定义函数
+// 自定义一个 getStr 函数，返回的参数是一个字符串指针，在 onLeave 函数中新建一个变量 string，分配内存并填充字符串 4567789, 然后将返回值替换变量 string
+Interceptor.attach(Module.findExportByName(null, "getStr"), {
+    onEnter: function(args) {
+        console.log("getStr");
+    },
+    onLeave: function(retval) {
+        console.log("\t[-] Type of return value: " + typeof retval);
+        console.log("\t[-] Original Return Value: " + retval.readUtf8String());
+ 
+        var string = Memory.allocUtf8String("456789");  //分配内存
+        retval.replace(string); //替换
+ 
+        console.log("\t[-] New Return Value: " + retval.readUtf8String());
+    },
+})
+```
+
+​    
+
+###### 拦截 Objective-C 方法
+
+frida 不仅可以拦截 C 函数，还可以拦截 Objective-C 方法，比如编写脚本对 +[NSURL URLWithString:] 进行拦截，代码如下，其中 onEnter 调用 ObjC.classes.NSString.stringWithString_ 给 NSString 传递新的值，这样相当于替换原本的 URL。
+
+```typescript
+var className = "NSURL";
+var funcName = "+ URLWithString:";
+var hook = eval('ObjC.classes.' + className + '["' + funcName + '"]');
+
+Interceptor.attach(hook.implementation, {
+    onLeave: function(retval) {
+        console.log("[*] Class Name: " + className);
+        console.log("[*] Method Name: " + funcName);
+        console.log("\t[-] Type of return value: " + typeof retval);
+        console.log("\t[-] Original Return Value: " + retval);
+    },
+ 
+    onEnter: function(args){
+        var className = ObjC.Object(args[0]);
+        var methodName = args[1];
+        var urlString = ObjC.Object(args[2]);
+ 
+        console.log("className: " + className.toString());
+        console.log("methodName: " + methodName.readUtf8String());
+        console.log("urlString: " + urlString.toString());
+        console.log("-----------------------------------------");
+ 
+        urlString = ObjC.classes.NSString.stringWithString_("http://www.baidu.com")
+        console.log("newUrlString: " + urlString.toString());
+        console.log("-----------------------------------------");
+    }
+});
+```
+
+
+
+
+
+​     
+
+#### 3）示例
+
+##### a. iOS / macOS 定位伪造
+
+基础：
+
+* iOS 和 macOS 定位使⽤统⼀ API：`CLLocationManager`
+
+* 需指定⼀个 delegate 实现如下回调⽅法获取相应事件：
+
+  ```objective-c
+  - (void)locationManager:(CLLocationManager *)manager didUpdateToLocation:
+  (CLLocation *)newLocation fromLocation:(CLLocation *)oldLocation;
+  ```
+
+* 如下⽅法开始定位
+
+  ```objective-c
+  - (void)requestLocation;
+  - (void)startUpdatingLocation
+  ```
+
+​    
+
+流程：
+
+* 先处理 requestLocation 等⽅法拿到 delegate 的指针
+* 在 delegate 上查找对应回调⽅法是否存在，逐个 hook
+* CLLocation 的经纬度是只读属性，需要创建新的副本。为了对抗时间戳等特征检测，最好把正确的 CLLocation 除经纬度之外所有的属性复制上去
+
+```typescript
+const { BWAJSEventAuthorizationHandler, CLLocation } = ObjC.classes;
+
+var hook_cllocation = ObjC.classes.CLLocation["- coordinate"]
+Interceptor.attach(hook_cllocation.implementation, {
+  onLeave: function(return_value) {
+    var spoofed_return_value = (new ObjC.Object(return_value)).initWithLatitude_longitude_(20.5937, 78.9629)
+    return_value.replace(spoofed_return_value)
+  }
+});
+
+var jsbHook = BWAJSEventAuthorizationHandler["- handleWithEvent:params:callback:"]
+Interceptor.attach(jsbHook.implementation, {
+  onEnter: function() {
+    console.log("BWAJSEventAuthorizationHandler hooked")
+  }
+});
+```
+
+​     
+
+##### b. 调用openURL
+
+```typescript
+// Get a reference to the openURL selector
+var openURL = ObjC.classes.UIApplication["- openURL:"];
+
+// Intercept the method
+Interceptor.attach(openURL.implementation, {
+  onEnter: function(args) {
+    // As this is an ObjectiveC method, the arguments are as follows:
+    // 0. 'self'
+    // 1. The selector (openURL:)
+    // 2. The first argument to the openURL selector
+    var myNSURL = new ObjC.Object(args[2]);
+    // Convert it to a JS string
+    var myJSURL = myNSURL.absoluteString().toString();
+    // Log it
+    console.log("Launching URL: " + myJSURL);
+  }
+});
+```
+
+
+
+
+
+
+
+拦截类所有方法
+
+想对某个类的所有方法进行批量拦截，可以使用`ApiResolver`接口，它可以根据正则表达式获取符合条件的所有方法
+
+```typescript
+var resolver = new ApiResolver('objc')
+
+resolver.enumerateMatches('*[T1TranslateButton *]', {
+    onMatch: function (match) {
+        console.log(match['name'] + ":" + match['address'])
+    },
+    onComplete: function () {}
+})
+```
+
+
+
+替换原有方法hook
+
+Interceptor.attach() 可以在拦截目标后，可以打印参数，修改返回值，但无法阻止原方法的执行
+
+```typescript
+var didTap = ObjC.classes.T1TranslateButton['- _didTap:forEvent:']
+ 
+var didTapOldImp = didTap.implementation
+ 
+// 覆盖实现
+didTap.implementation = ObjC.implement(setTitle, function(handle, selector, arg1, arg2) {
+ 
+  var self = ObjC.Object(handle)
+  console.log("self -- ", self) 
+ 
+  // 调用旧实现
+  // didTapOldImp(handle, selector, arg1, arg2)
+})
+```
+
+需要注意的是，像`_didTap:forEvent:`这里需要传递两个参数，则`ObjC.implement`的回调中也需要写明两个参数（arg1、arg2），即需要多少参数就写多少，没有则不用写
+
+
+
+
+
+
+
+​    
+
+# 二、frida python实践
 
 ## 1、get_device_manager
 
@@ -65,7 +700,20 @@ all_processes = device.enumerate_processes()
 
 ## 4、attach
 
-连接设备, 获取session
+功能：附加进程或APP，生成session实例
+
+> 1）启动新的实例：`device.spawn(‘path or bundle id’) `
+>
+> * 可指定启动参数
+> * ⽀持在进程初始化之前执⾏⼀些操作
+> * iOS 上如果已经 App 运⾏（包括后台休眠）会导致失败
+>
+> 2）附加到现有进程：`device.attach(pid) `
+>
+> * 可能会错过 hook 时机 
+> * spawn 在移动设备容易出现不稳定现象，可使⽤ attach 模式
+
+​     
 
 ```python
 # 等价于 frida -U -f xx.xx.xx --no-pause
@@ -149,7 +797,9 @@ def on_message(message, data):
     else:
         Log.error(message)
 
-script.on("message", on_message)
+# 设备事件处理
+script.on("message", on_message)  # listen
+# script.off("message", on_message)  # remove listen
 
 # 执行
 script.load()
@@ -161,11 +811,27 @@ sys.stdin.read()
 
 ​      
 
-## 7、Demo示例
+## 7、listen: on / off
+
+```python
+# 设备事件处理
+device_manager = frida.get_device_manager() 
+device_manager.on('changed', on_changed) # listen
+device_manager.off('changed', on_changed) # remove listener
+
+# 监听设备插拔
+device_manager.on('add', on_changed) 
+device_manager.on('changed', on_changed) 
+device_manager.on('remove', on_removed)
+```
+
+​     
+
+## 8、Demo示例
 
 
 
-### 1）初始化设备
+### 8.1 初始化设备
 
 ```python
 import frida
@@ -231,9 +897,9 @@ if __name__ == '__main__':
 
 ​     
 
-### 2）设备连接 Android & iOS
+### 8.2 设备连接 Android & iOS
 
-#### a. Android
+#### 1）Android
 
 ```python
 def attach_android(app_name: str, app_identifier: str):
@@ -255,7 +921,7 @@ def attach_android(app_name: str, app_identifier: str):
     return device.attach(app_name)
 ```
 
-#### b. iOS
+#### 2）iOS
 
 ```python
 def attach_ios(app_name: str, app_identifier: str):
@@ -281,7 +947,7 @@ def attach_ios(app_name: str, app_identifier: str):
 
    
 
-### 3）js脚本注入
+### 8.3 js脚本注入
 
 ```python
 js_modules = [
@@ -312,7 +978,7 @@ def inject_js(session: frida.core.Session, modules: list, app_identifier: str):
 
    
 
-### 4）执行
+### 8.4 执行
 
 ```python
 if __name__ == '__main__':
@@ -337,9 +1003,89 @@ if __name__ == '__main__':
 
 ​    
 
-# 二、frida注入案例
+# 三、frida-compile 实践
 
-​     
+ ```shell
+ pip install frida
+ pip install frida-tools
+ 
+ # 安装 node
+ brew install node
+ 
+ # 环境配置完毕后，在工程目录安装项目依赖, 使用教程: https://www.runoob.com/nodejs/nodejs-npm.html
+ # 
+ npm install
+ ```
+
+
+
+### 编译执行测试代码
+
+1. 安装包含 Frida SDK 测试包，通过 USB 线将手机与电脑连接
+2. 编译 JavaScript 用例代码，编译生成 _android.js、_ios.js 两个文件，文件内包含 import 测试用例
+
+```plaintext
+  npm run build
+```
+
+1. 执行测试
+
+```plaintext
+  npm run test_android -- tv.danmaku.bili
+  npm run test_ios -- tv.danmaku.bilianime
+```
+
+命令支持的参数如下：
+
+```plaintext
+  --runtime {qjs,v8} ：执行 JS 脚本的引擎
+  --pause：创建进程成功后，暂停应用主线程（main thread）
+  -q ：安静模式（没有 prompt）执行完脚本后立即退出
+  -t TIMEOUT：在安静模式下，等待 N 秒后退出进程
+```
+
+```plaintext
+  安静模式执行测试脚本，30秒后自动退出
+  npm run test_android -- tv.danmaku.bili -q -t 30
+  npm run test_ios -- tv.danmaku.bilianime -q -t 30
+```
+
+> Android 端需要安装 adb，否则 npm run test_android 命令无法拉起哔哩哔哩进程 
+>  编写测试 case 可以用 JavaScript 或者 TypeScript
+
+
+
+
+
+```python
+import sys
+import subprocess
+import time
+
+if __name__ == '__main__':
+    platform   = sys.argv[1] if len(sys.argv) >= 2 else ""
+    extraParam = " ".join(sys.argv[2:]) if len(sys.argv) >= 4 else ""
+
+    if platform == 'android':
+        bundle = sys.argv[2] if len(sys.argv) == 3 else "tv.danmaku.bili"
+
+        subprocess.call(f"adb shell am force-stop {bundle} && adb shell am start -n {bundle}/.MainActivityV2", shell=True)
+        time.sleep(5)
+        subprocess.call(f"frida -U -l _android.js -F {extraParam}", shell=True)
+    elif platform == 'ios':
+        bundle = sys.argv[2] if len(sys.argv) == 3 else "com.bilibili.danmaku"
+
+        subprocess.call(f"frida -U -f {bundle}  {extraParam} &", shell=True)
+        time.sleep(5)
+        subprocess.call(f"frida -U -l _ios.js -n Gadget {extraParam}", shell=True)
+    else:
+        print("[*] Invalid platform " + platform)
+```
+
+​       
+
+
+
 
 
 
@@ -351,3 +1097,8 @@ if __name__ == '__main__':
 2. [hacktricks: frida-tutorial-2](https://book.hacktricks.xyz/mobile-pentesting/android-app-pentesting/frida-tutorial/frida-tutorial-2)
 3. [Python frida.get_device() Examples](https://www.programcreek.com/python/example/111316/frida.get_device)
 4. [Frida从入门到放弃](http://www.gouzai.pw/2019/03/07/Frida%E4%BB%8E%E5%85%A5%E9%97%A8%E5%88%B0%E6%94%BE%E5%BC%83/)
+5. [全平台逆向工程资料](https://github.com/alphaSeclab/awesome-reverse-engineering/blob/master/Readme_full.md)
+6. [（黑科技）Frida的用法--Hook Java代码篇](https://007.tg/2020/10/27/1452/)
+7. [glider菜鸟: frida源码阅读之frida-java](https://bbs.pediy.com/thread-229215.htm)
+8. [Frida开发环境搭建记录](https://blog.csdn.net/qq_38851536/article/details/104895878)
+9. [[原创]FRIDA 使用经验交流分享 frida + typescript](https://bbs.pediy.com/thread-265160.htm)
