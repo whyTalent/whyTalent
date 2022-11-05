@@ -7,6 +7,15 @@ Frida分客户端环境和服务端环境
 
 也可以把客户端理解成控制端，服务端理解成被控端，假如要用PC来对Android设备上的某个进程进行操作，那么PC就是客户端，而Android设备就是服务端。 
 
+<div align="center"><img src="imgs/firda架构.png" alt="frida架构" style="zoom:80%;" /></div>
+
+按照功能层级，可以划分可以分为四个级别：
+
+1. CPU 指令集级别的 inline-hook 框架: **frida-gum**
+2. 使用 JavaScript 引擎对 gum 进行封装实现脚本拓展的能力: **gum-js**
+3. 运行时进程注入、脚本加载、RPC 通信管理等功能: **frida-core**
+4. 针对特殊运行环境的 JS 模块及其接口，如 **frida-java-bridge、frida-objc-bridge** 等
+
   
 
 # 一、frida自动化基础
@@ -350,7 +359,7 @@ Java.perform(function () {
 
 #### 1）特点
 
-与 Java 显著不同，frida-objc 将所有 class 信息保存到 `ObjC.classes`  中，直接对其 for in 遍历 key 即可
+与 Java 显著不同，frida-objc 将所有 **class 信息** 保存到 `ObjC.classes`  中，直接对其 for in 遍历 key 即可
 
 ```typescript
 // Objective C 实现
@@ -361,7 +370,7 @@ var NSString = ObjC.classes.NSString;
 NSString.stringWithString_("Hello World”);
 ```
 
-`new ObjC.Object` 可以将指针转换为 Objective C 对象，但如果指针不是合法的对象或合法的地址，将抛出异常或导致未定义⾏为
+`new ObjC.Object` 可以将指针转换为 **Objective C 对象**，但如果指针不是合法的对象或合法的地址，将抛出异常或导致未定义⾏为
 
 ​    
 
@@ -369,7 +378,7 @@ NSString.stringWithString_("Hello World”);
 
 firda提供了3种方式hook objective C方法：
 
-> 1）`ObjC.classes.Class.method` 以及 `ObjC.Block` ：都提供了⼀个 `.implementation` 的 setter 来 hook ⽅法实现，实际上就是 iOS 开发者熟悉的 Method Swizzling
+> 1）`ObjC.classes.Class.method` 以及 `ObjC.Block` ：都提供了⼀个 `.implementation` （获取内存地址）的 setter 来 hook ⽅法实现，实际上就是 iOS 开发者熟悉的 **Method Swizzling**
 >
 > 2）使⽤拦截器  `Interceptor.attach(ObjC.classes.Class.method.implementation)`，看上去很相似，但实现原理是对 selector 指向的代码进⾏ inline hook
 >
@@ -379,7 +388,7 @@ firda提供了3种方式hook objective C方法：
 
 ##### a. ObjC.classes.Class.method 
 
-**格式**：ObjC.classes.className["funcName"]
+**格式**：`ObjC.classes.className["funcName"]`
 
 其中，className指具体的类名称，funcName指类方法名称
 
@@ -408,15 +417,46 @@ console.log(model.getDataGotoType());
 
 ​     
 
-##### b. ObjC.Block 
+##### b. Objc.Block 
+
+**格式**：new Objc.Block(target[, options])
+
+其中，target 是一个 **[NativePointer](https://frida.re/docs/javascript-api/#nativepointer)** 对象
+
+```typescript
+// Defining a Block that will be passed as handler parameter to +[UIAlertAction actionWithTitle:style:handler:]
+var handler = new ObjC.Block({
+  retType: 'void',
+  argTypes: ['object'],
+  implementation: function () {
+  }
+});
+
+// Import ObjC classes
+var UIAlertController = ObjC.classes.UIAlertController;
+var UIAlertAction = ObjC.classes.UIAlertAction;
+var UIApplication = ObjC.classes.UIApplication;
+
+// Using Grand Central Dispatch to pass messages (invoke methods) in application's main thread
+ObjC.schedule(ObjC.mainQueue, function () {
+  // Using integer numerals for preferredStyle which is of type enum UIAlertControllerStyle
+  var alert = UIAlertController.alertControllerWithTitle_message_preferredStyle_('Frida', 'Hello from Frida', 1);
+  // Again using integer numeral for style parameter that is enum
+  var defaultAction = UIAlertAction.actionWithTitle_style_handler_('OK', 0, handler);
+  alert.addAction_(defaultAction);
+  // Instead of using `ObjC.choose()` and looking for UIViewController instances
+  // on the heap, we have direct access through UIApplication:
+  UIApplication.sharedApplication().keyWindow().rootViewController().presentViewController_animated_completion_(alert, true, NULL);
+})
+```
 
    
-
-
 
 ##### c. Interceptor 拦截器
 
 **格式**：Interceptor.attach(target, callbacks[, data])
+
+其中，target是 NativePointer 指定要拦截调用的函数的地址，如果从Frida API获取地址（例如`Module.getExportByName()` ），Frida将处理详细信息
 
 ​    
 
@@ -505,10 +545,6 @@ Interceptor.attach(hook.implementation, {
 });
 ```
 
-
-
-
-
 ​     
 
 #### 3）示例
@@ -584,13 +620,56 @@ Interceptor.attach(openURL.implementation, {
 });
 ```
 
+​    
 
+##### c. 拦截网络请求
 
+```typescript
+//判断Object-C类方法是否已经加载进来
+if(ObjC.available){
+    console.log('\n[*] Starting Hooking');
+    
+    var _className = "AFHTTPSessionManager"; //类名
+    var _methodName = "- POST:parameters:progress:success:failure:"; //方法名
+    
+    // 通过ObjC.classes返回当前注册类的映射表找到想要hook的类名、方法名
+    var hooking = ObjC.classes[_className][_methodName];
+    console.log('className is: ' + _className + ' and methodName is: ' + _methodName);
+    
+    const pendingBlocks = new Set()
+    Interceptor.attach(hooking.implementation,{ 
+        onEnter: function(args) {
+            // args[0]:self, args[1]:The selector
+            // args[2]: 请求url args[3] 请求参数
+            var param = new ObjC.Object(args[2]);            
+            var param2 = new ObjC.Object(args[3]);
+            
+            const block = new ObjC.Block(args[5]);
+            pendingBlocks.add(block); // Keep it alive
+            
+            const appCallback = block.implementation;
+            block.implementation = (success1, success2) => {
+              console.log('网络请求成功回调success1'+success1+'success2'+success2);
+              const result = appCallback(success1, success2);
+              pendingBlocks.delete(block);
+              return result;
+            };
+        },
+        onLeave:function(returnValue){
+            //如下代码则是在函数调用之后 打印函数的返回值及函数返回值类型
+            console.log('Return value of: ');
+            console.log(' ' + this._className + ' --> ' + this._methodName);
+            var typeValue = Object.prototype.toString.call(returnValue);
+            console.log("\t[-] Type of return value: " + typeValue);
+            console.log("\t[-] Return Value: " + returnValue);
+        }
+    });
+}
+```
 
+​      
 
-
-
-拦截类所有方法
+##### d. 拦截类所有方法
 
 想对某个类的所有方法进行批量拦截，可以使用`ApiResolver`接口，它可以根据正则表达式获取符合条件的所有方法
 
@@ -605,9 +684,9 @@ resolver.enumerateMatches('*[T1TranslateButton *]', {
 })
 ```
 
+​      
 
-
-替换原有方法hook
+##### e. 替换原有方法hook
 
 Interceptor.attach() 可以在拦截目标后，可以打印参数，修改返回值，但无法阻止原方法的执行
 
@@ -629,13 +708,7 @@ didTap.implementation = ObjC.implement(setTitle, function(handle, selector, arg1
 
 需要注意的是，像`_didTap:forEvent:`这里需要传递两个参数，则`ObjC.implement`的回调中也需要写明两个参数（arg1、arg2），即需要多少参数就写多少，没有则不用写
 
-
-
-
-
-
-
-​    
+​       
 
 # 二、frida python实践
 
@@ -1005,59 +1078,37 @@ if __name__ == '__main__':
 
 # 三、frida-compile 实践
 
+
+
+## 1、环境配置
+
  ```shell
+ # 安装 frida
  pip install frida
  pip install frida-tools
  
  # 安装 node
  brew install node
  
- # 环境配置完毕后，在工程目录安装项目依赖, 使用教程: https://www.runoob.com/nodejs/nodejs-npm.html
- # 
+ # 环境配置完毕后，在工程目录安装项目依赖（package.json文件）, 使用教程: https://www.runoob.com/nodejs/nodejs-npm.html
  npm install
  ```
 
+```json
+// package.json
 
-
-### 编译执行测试代码
-
-1. 安装包含 Frida SDK 测试包，通过 USB 线将手机与电脑连接
-2. 编译 JavaScript 用例代码，编译生成 _android.js、_ios.js 两个文件，文件内包含 import 测试用例
-
-```plaintext
-  npm run build
+"scripts": {
+    "prepare": "npm run build",
+    "build": "frida-compile agent/android.ts -o _android.js -c && frida-compile agent/ios.ts -o _ios.js -c",
+    "watch": "frida-compile agent/android.ts -o _android.js -w && frida-compile agent/ios.ts -o _ios.js -w",
+    "test_android": "python runner.py android",
+    "test_ios": "python runner.py ios"
+}
 ```
-
-1. 执行测试
-
-```plaintext
-  npm run test_android -- tv.danmaku.bili
-  npm run test_ios -- tv.danmaku.bilianime
-```
-
-命令支持的参数如下：
-
-```plaintext
-  --runtime {qjs,v8} ：执行 JS 脚本的引擎
-  --pause：创建进程成功后，暂停应用主线程（main thread）
-  -q ：安静模式（没有 prompt）执行完脚本后立即退出
-  -t TIMEOUT：在安静模式下，等待 N 秒后退出进程
-```
-
-```plaintext
-  安静模式执行测试脚本，30秒后自动退出
-  npm run test_android -- tv.danmaku.bili -q -t 30
-  npm run test_ios -- tv.danmaku.bilianime -q -t 30
-```
-
-> Android 端需要安装 adb，否则 npm run test_android 命令无法拉起哔哩哔哩进程 
->  编写测试 case 可以用 JavaScript 或者 TypeScript
-
-
-
-
 
 ```python
+// runner.py
+
 import sys
 import subprocess
 import time
@@ -1067,28 +1118,65 @@ if __name__ == '__main__':
     extraParam = " ".join(sys.argv[2:]) if len(sys.argv) >= 4 else ""
 
     if platform == 'android':
-        bundle = sys.argv[2] if len(sys.argv) == 3 else "tv.danmaku.bili"
-
+        bundle = sys.argv[2] if len(sys.argv) == 3 else "com.app.application"
+		
+        // 杀死应用 & 启动APP
         subprocess.call(f"adb shell am force-stop {bundle} && adb shell am start -n {bundle}/.MainActivityV2", shell=True)
         time.sleep(5)
+        // 注入&执行js脚本
         subprocess.call(f"frida -U -l _android.js -F {extraParam}", shell=True)
     elif platform == 'ios':
-        bundle = sys.argv[2] if len(sys.argv) == 3 else "com.bilibili.danmaku"
-
-        subprocess.call(f"frida -U -f {bundle}  {extraParam} &", shell=True)
+        bundle = sys.argv[2] if len(sys.argv) == 3 else "com.app.application"
+		
+        // 拉起应用（iOS 手动点击启动无法 attach 进程）
+        subprocess.call(f"frida -U -f {bundle} {extraParam} &", shell=True)
         time.sleep(5)
+        // 注入&执行js脚本（注意attach的进程是Gadget，而不是对应的bundleid）
         subprocess.call(f"frida -U -l _ios.js -n Gadget {extraParam}", shell=True)
     else:
         print("[*] Invalid platform " + platform)
 ```
 
-​       
+​    
+
+## 2、编译执行测试代码
+
+> 1）安装包含 Frida SDK 测试包，通过 USB 线将手机与电脑连接
+>
+> 2）编译 JavaScript 用例代码，编译生成  `_android.js`、`_ios.js` 两个文件，文件内包含 import 测试用例
+>
+> ```shell
+> npm run build
+> ```
+>
+> 3）执行测试
+>
+> ```shell
+> # 安静模式执行测试脚本，30秒后自动退出
+> npm run test_android -- com.app.application -q -t 30
+> npm run test_ios -- com.app.application -q -t 30
+> ```
+>
+> 命令支持的参数如下：
+>
+> ```shell
+> --runtime {qjs,v8} ：执行 JS 脚本的引擎
+> --pause：创建进程成功后，暂停应用主线程（main thread）
+> -q ：安静模式（没有 prompt）执行完脚本后立即退出
+> -t TIMEOUT：在安静模式下，等待 N 秒后退出进程
+> ```
+>
+> 4）增量编译：开启一个终端，输入 watch 命令监听 `_android.js`、`_ios.js` 是否有变化，有变化则会重新加载 js 文件
+>
+> ```shell
+> npm run watch
+> ```
+>
+> **注**：增量编译后，偶现 Frida Session 关闭问题，遇到关闭后可以重新执行测试命令
 
 
 
-
-
-
+​           
 
 
 # 附录

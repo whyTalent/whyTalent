@@ -86,189 +86,9 @@ frida-ps
 
 ## 3 设备端配置
 
-下面主要分别介绍在 `Android` / `iOS` 两端的设备环境配置
-
-​       
-
-### 1) Android端
-
------
-
-电脑 USB 连接安卓手机，针对设备是否 root 采用不同的方式
-
-#### a. root设备
-
->**1）**查看手机型号，下载系统对应版本的 [frida-server](https://github.com/frida/frida/releases)
->
->```shell
->$ adb shell getprop ro.product.cpu.abi
->```
->
->注意：Frida-server的版本必须跟宿主机的Frida版本一致，比如宿主机Frida的版本是10.6.52，Android手机是arm64的，那么应该下载：rida-server-10.6.52-android-arm64.xz 文件。
->
->**2）**下载后解压文件，并将文件重命名为: `frida-server`, 重命名完成后使用`adb push`命令推送到手机中
->
->```shell
->$ adb root # might be required
->$ adb push frida-server /data/lcoal/tmp
->```
->
->**3）**推送完成后将frida-sever赋予执行的权限，并运行Frida-server，使用以下命令：
->
->```shell
->$ adb shell "chmod 755 /data/local/tmp/frida-server"
->$ adb shell "/data/local/tmp/frida-server &"
->```
->
->**注1**： 如果frida-server没有启动，查看一下你是否使用的是Root用户来启动，如果使用Root用户则应该是`#`，
->
->**注2**： 如果要启动frida-server作为后台进程、可以使用这个命令`./frida-server &`
->
->**4）**正常启动后，另开一个终端，使用 `frida-ps -U` 命令检查Frida是否正常运行，如果正常运行则会列出Android设备上当前正在运行的进程。
->
->参数-U 代表USB，意思让Frida检查USB设备，使用`frida-ps -R` 也可以，但是需要进行转发，执行 `adb forward tcp:27042 tcp:27042` 修改端口号，后执行`frida-ps -R`也可以看到手机上的进程。
->
->```shell
-># 进行端口转发监听
->$ adb forward tcp:27042 tcp:27042
->$ adb forward tcp:27043 tcp:27043
->
-># 注：27042 用于与frida-server通信的默认端口号, 之后的每个端口对应每个注入的进程，检查27042端口可检测 Frida 是否存在
->```
-
-​       
-
-#### b. 非root设备
-
-没有 root 的设备采用安装 `frida-gadget` 的方式，需要对目标应用 apk 进行反编译注入和调用
-
-> 1）**反编译 apk**，反编译之后生成 target_app_floder 文件夹
->
-> ```shell
-> $ apktool d target_app.apk -o target_app_floder
-> ```
->
-> 2）**下载系统对应版本的 [frida-gadget](https://github.com/frida/frida/releases)**，解压并放到指定位置
->
-> 下载之后将其进行解压，然后放到 `target_app_floder//lib/armeabi/libfrida-gadget.so`，注意修改名字以 `lib` 开头 `.so` 结尾，对应下一步的代码中的`frida-gadger`
->
-> > **注**：测试设备是 `arm64-v8a`，所以下载 [**frida-gadget-12.2.27-android-arm64.so.xz**](https://github.com/frida/frida/releases/download/12.2.27/frida-gadget-12.2.27-android-arm64.so.xz)，但最后回编译打包之后，运行总是奔溃，不断的尝试之后才发现使用 [**frida-gadget-12.2.27-android-arm.so.xz**](https://github.com/frida/frida/releases/download/12.2.27/frida-gadget-12.2.27-android-arm.so.xz) 可以正常运行
->
-> 3）**代码中加载上一步so 文件，建议在应用的入口文件中执行**
->
-> 根据 AndroidManifest.xml 文件找到程序的入口文件，例如 MainActivity，在反编译生成的代码 smali 中的 onCreate 方法中注入如下代码
->
-> ```java
-> const-string v0, "frida-gadget"
-> invoke-static {v0}, Ljava/lang/System;>loadLibrary(Ljava/lang/String;)V
-> ```
->
-> 4）**检查AndroidManifest.xml清单文件的网络权限**，忌重复添加，会导致回编译包出错
->
-> ```java
-> <uses-permission android:name="android.permission.INTERNET" />
-> ```
->
-> 5）**回编译 apk**
->
-> > a. 重新打包
-> >
-> > ```shell
-> > $ apktool b -o repackage.apk target_app_floder
-> > ```
-> >
-> > b. 创建签名文件，有的话可忽略此步骤
-> >
-> > ```shell
-> > $ keytool -genkey -v -keystore mykey.keystore -alias mykeyaliasname -keyalg RSA -keysize 2048 -validity 10000
-> > ```
-> >
-> > c. 签名，以下任选其一
-> >
-> > ```shell
-> > # jarsigner 方式
-> > $ jarsigner -sigalg SHA256withRSA -digestalg SHA1 -keystore mykey.keystore -storepass 你的密码 repackaged.apk mykeyaliasname
-> > 
-> > # apksigner 方式: 如需要禁用 v2签名 添加选项--v2-signing-enabled false
-> > $ apksigner sign --ks mykey.keystore --ks-key-alias mykeyaliasname repackaged.apk
-> > ```
-> >
-> > d. 验证，以下任选其一
-> >
-> > ```shell
-> > # jarsigner方式
-> > $ jarsigner -verify repackaged.apk
-> > 
-> > # apksigner 方式
-> > $ apksigner verify -v --print-certs repackaged.apk
-> > 
-> > # keytool方式
-> > $ keytool -printcert -jarfile repackaged.apk
-> > ```
-> >
-> > e. 对齐
-> >
-> > ```shell
-> > # 4字节对齐优化
-> > $ zipalign -v 4 repackaged.apk final.apk
-> > 
-> > # 检查是否对齐
-> > $ zipalign -c -v 4 final.apk
-> > 
-> > # zipalign可以在V1签名后执行, 但zipalign不能在V2签名后执行, 只能在V2签名之前执行
-> > ```
->
-> 6）**安装 apk**
->
-> ```shell
-> $ adb install final.apk
-> ```
->
-> 7）**检查是否成功**
->
-> 打开运行 final.apk，在注入代码位置进入停止等待页面
-
-​     
-
-**另一种非 root 方式**：https://bbs.pediy.com/thread-229970.htm
+ `Android` / `iOS` 设备环境配置，以及APP的frida-gadget持久化配置，详情见 [frida APP逆向配置](3 frida APP逆向配置.md)
 
 ​         
-
-### 2) iOS端
-
------
-
-在iOS设备上，Frida支持两种使用模式，具体使用哪种模式要看你的iOS设备是否已经越狱
-
-#### a. 已越狱设备
-
-越狱机上使用Cydia工具配置Frida
-
-> 1）启动 Cydia
->
-> 2）添加软件源：manage -> 软件源 Sources-> 编辑 Edit（左上角）-> 添加 Add（右上角）-> 输入 https://build.frida.re/
->
-> 3）通过刚才添加的软件源安装 frida 插件，注意需要根据手机进行安装：iPhone 5 及之前的机器为 32 位，5s 及之后的机器为 64 位，进入 变更 -> 找到Frida -> 进入Frida 在右上角点击安装
-
-​    
-
-#### b. 未越狱设备
-
-frida-server在运行时需要root环境，但如果没有越狱的设备，依然可以使用frida，只需要重打包ipa文件，将frida运行库注入ipa文件中，app在启动时会自动加载frida运行库，即可实现在非越狱的设备上使用Frida。
-
-因此，为了让一个App能使用Frida，必须想办法让它加载一个 **.dylib**，就是一个 **Gadget** 模块，因此需要配置一下 **xcode** 的编译配置来让你的App可以集成Frida。当然也可以使用相关的工具来修改一个已经编译好的App， 比如 **insert_dylib** 这样的工具。
-
-... ...
-
-​      
-
-#### c. 模拟器
-
-在模拟器中进行测试，需要把命令行中的 **-U** 替换成 **-R**，这样一来底层的内部调用也从 **get_usb_device()** 变成 **get_remote_device()**
-
-... ...
-
-​      
 
 # 三 firda工具&API
 
@@ -278,13 +98,13 @@ frida-server在运行时需要root环境，但如果没有越狱的设备，依�
 
 Frida 支持一下基础工具：
 
-### 1）frida-ls-devices
+### 1.1 frida-ls-devices
 
 查看可用的设备列表
 
    
 
-### 2）frida-ps
+### 1.2 frida-ps
 
 获取设备进程列表信息
 
@@ -309,7 +129,7 @@ frida-ps -D xxxxxx -a
 
 ​     
 
-### 3）frida-kill
+### 1.3 frida-kill
 
 结束/杀死设备上的指定进程
 
@@ -324,7 +144,7 @@ frida-kill -D xxxxxxxxx Twitter
 
 ​     
 
-### 4）frida-trace
+### 1.4 frida-trace
 
 跟踪函数或方法的调用
 
@@ -351,7 +171,7 @@ console.log('\tBacktrace:\n\t' + Thread.backtrace(this.context, Backtracer.ACCUR
 
 ​    
 
-### 5）frida CLI
+### 1.5 frida CLI
 
 交互模式
 
@@ -380,7 +200,41 @@ frida -U -f com.atebits.Tweetie2 --no-pause
 # 4) quit/exit 或 Ctrl + D: 退出结束脚本注入
 ```
 
-​        
+​     
+
+### 1.6 frida-compile
+
+使用 `frida-compile` 支持实时把成 `TypeScript` 编译成 `JavaScript` 代码
+
+**注**：Frida不支持直接注入TypeScipt
+
+```shell
+# frida-compile
+usage: frida-compile [options] <module>
+
+positional arguments:
+  module                TypeScript/JavaScript module to compile
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -O FILE, --options-file FILE
+                        text file containing additional command line options
+  --version             show program's version number and exit
+  -o OUTPUT, --output OUTPUT
+                        write output to <file>
+  -w, --watch           watch for changes and recompile
+  -S, --no-source-maps  omit source-maps
+  -c, --compress        compress using terser
+  -v, --verbose         be verbose
+```
+
+```shell
+# demo
+frida-compile agent/android.ts -o _android.js -c
+frida-compile agent/android.ts -o _android.js -w
+```
+
+​         
 
 ## 2 Frida API
 
@@ -897,4 +751,5 @@ Java.perform(function () {
 1. [Android Hook 之 Frida](https://mabin004.github.io/2018/03/09/droid-Hook-%E2%80%94%E2%80%94-Frida/)
 2. [frida Android 的简单使用](https://juejin.cn/post/7008819110515736583)
 3. [官网installation](https://frida.re/docs/android/)
-4. [Frida 安装和使用: root和非root设备](https://www.jianshu.com/p/bab4f4714d98)
+4. [app逆向基础 安装frida框架](https://codeantenna.com/a/0EQwO1RM6N)
+
