@@ -16,7 +16,7 @@ Frida分客户端环境和服务端环境
 3. 运行时进程注入、脚本加载、RPC 通信管理等功能: **frida-core**
 4. 针对特殊运行环境的 JS 模块及其接口，如 **frida-java-bridge、frida-objc-bridge** 等
 
-  
+​          
 
 # 一、frida自动化基础
 
@@ -234,7 +234,7 @@ Java.perform(function () {
 > Java.use('java.lang.String').$new.overload('[B', 'java.nio.charset.Charset')
 > ```
 >
-> **JNI 层插桩**：JNI 实现在 so 中，且符号必然是导出函数，照常使⽤Interceptor 即可
+> **JNI 层插桩**：JNI 实现在 so 中，且符号必然是导出函数，照常使⽤ `Interceptor` 即可
 
 ​         
 
@@ -317,7 +317,7 @@ ClassName.func.overload().implementation=function(){
 
 ​     
 
-#### 3）函数调用
+#### 3）函数调用&实例化
 
 ```typescript
 // 和Java一样，创建类实例就是调用构造函数，而在这里用$new表示一个构造函数
@@ -332,7 +332,9 @@ instance.func();
 
 ​      
 
-#### 4）获取调用堆栈
+#### 4）常用Java hook方法
+
+##### a. 获取调用堆栈
 
 Android 提供了⼯具函数可以打印 Exception 的堆栈，此⽅式等价 于 Log.getStackTraceString(new Exception)
 
@@ -350,6 +352,248 @@ Java.perform(function () {
 ```
 
 ​      
+
+##### b. 枚举所有类方法
+
+```typescript
+Java.perform(function() {
+	//enter class name here: example android.security.keystore.KeyGenParameterSpec$Builder
+	//class inside a class is defined using CLASS_NAME$SUB_CLASS_NAME
+	var class_name = "android.security.keystore.KeyGenParameterSpec$Builder";
+	var methodArr = Java.use(class_name).class.getMethods();
+    
+	console.log("[*] Class Name: " + class_name)
+	console.log("[*] Method Names:")
+	for(var m in methodArr)
+	{
+		console.log(methodArr[m]);
+	}
+});
+```
+
+​      
+
+#### 5）Hook 动态链接库（loadLibrary）
+
+Android中我们通常使用系统提供的两种API：System.loadLibrary或者System.load来加载so文件：
+
+```java
+// 加载的是libnative-lib.so，注意的是这边只需要传入"native-lib"
+System.loadLibrary("native-lib");
+
+// 传入的是so文件完整的绝对路径
+System.load("/data/data/应用包名/lib/libnative-lib.so")
+```
+
+System.loadLibrary()和System.load()的区别：
+
+> 1）loadLibray传入的是编译脚本指定生成的so文件名称，一般不需要包含开头的lib和结尾的.so，而load传入的是so文件所在的绝对路径
+>
+> 2）loadLibrary传入的不能是路径，查找so时会优先从应用本地路径下(/data/data/${package-name}/lib/arm/)进行查找，不存在的话才会从系统lib路径下(/system/lib、/vendor/lib等)进行查找；而load则没有路径查找的过程
+>
+> 3）load传入的不能是sdcard路径，会导致加载失败，一般只支持应用本地存储路径/data/data/${package-name}/，或者是系统lib路径system/lib等这2类路径
+>
+> 4）loadLibrary加载的都是一开始就已经打包进apk或系统的so文件了，而load可以是一开始就打包进来的so文件，也可以是后续从网络下载，外部导入的so文件
+>
+> 5）重复调用loadLibrar, load并不会重复加载so，会优先从已加载的缓存中读取，所以只会加载一次
+>
+> 6）加载成功后会去搜索so是否有"JNI_OnLoad"，有的话则进行调用，所以"JNI_OnLoad"只会在加载成功后被主动回调一次，一般可以用来做一些初始化的操作，比如动态注册jni相关方法等
+
+​     
+
+底层Android 加载动态链接库Java代码：
+
+```java
+// System.load("/data/data/应用包名/lib/libnative-lib.so")
+public static void load(String filename) {
+    Runtime.getRuntime().load0(VMStack.getStackClass1(), filename);
+}
+
+// System.loadLibrary("native-lib")
+public static void loadLibrary(String libname) {
+    Runtime.getRuntime().loadLibrary0(VMStack.getCallingClassLoader(), libname);
+}
+```
+
+Hook底层System.loadLibrary方式：
+
+```typescript
+// 1) overload 重载
+Java.perform(function() {
+    const System = Java.use('java.lang.System');
+    const Runtime = Java.use('java.lang.Runtime');
+    const VMStack = Java.use('dalvik.system.VMStack');
+
+	// System.loadLibrary 函数重载
+    System.loadLibrary.overload('java.lang.String').implementation = function(library) {
+        console.log("[*] Loading dynamic library => " + library);
+        try {
+            // android OAID 动态链接库加载
+            // PS: frida实践过程so库发现影响APP启动,跳过so库加载逻辑,规避导致此问题,理论上不影响APP整体功能
+            if(library === 'msaoaidsec') {
+                return;
+            }
+            
+            const loaded = Runtime.getRuntime().loadLibrary0(VMStack.getCallingClassLoader(), library);
+            return loaded;
+        } catch(ex) {
+            console.log(ex);
+        }
+    };
+});
+
+// 2) 重写
+Java.perform(function(){
+    const system = Java.use('java.lang.System');
+    const Runtime = Java.use('java.lang.Runtime');
+    const VMStack = Java.use('dalvik.system.VMStack');
+    
+    system.loadLibrary.implementation = function(library){
+        console.log("[*] Loading dynamic library => " + library);
+        
+        // this.loadLibrary(library);
+        const loaded = Runtime.getRuntime().loadLibrary0(VMStack.getCallingClassLoader(), library);
+        
+        // 底层注入
+        var mbase = Module.getBaseAddress('libluajava.so');
+        Interceptor.attach(mbase.add(0xC999), {
+        	onEnter:function(args){
+            	console.log(hexdump(Memory.readPointer(args[2]),{ length: 100, ansi: true }));
+        	}
+    	});
+    }
+});
+```
+
+**注**：`loadLibrary` 内部会修改 `classloader`，不能直接调用 `this.loadLibrary(library)`，故主动调用更底层的`loadLibrary0`
+
+详情：
+
+* [Android 加载动态链接库的过程及其涉及的底层原理](https://pqpo.me/2017/05/31/system-loadlibrary/)
+* [[原创]frida hook loadLibrary](https://bbs.pediy.com/thread-263072.htm)
+* [Github: hook diopen & android_dlopen_ext](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_artmethod.js)
+
+​         
+
+#### 6）hook dlopen 和 android_dlopen_ext
+
+```typescript
+function hook_dlopen(module_name) {
+    var android_dlopen_ext = Module.findExportByName(null, "android_dlopen_ext");
+
+    if (android_dlopen_ext) {
+        Interceptor.attach(android_dlopen_ext, {
+            onEnter: function (args) {
+                var pathptr = args[0];
+                if (pathptr) {
+                    this.path = (pathptr).readCString();
+                    if (this.path.indexOf(module_name) >= 0) {
+                        this.canhook = true;
+                        console.log("android_dlopen_ext:", this.path);
+                    }
+                }
+            },
+            onLeave: function (retval) {
+                if (this.canhook) {
+                    console.log("[*] android_dlopen_ext can hook");
+                }
+            }
+        });
+    }
+
+    var dlopen = Module.findExportByName(null, "dlopen");
+    if (dlopen) {
+        Interceptor.attach(dlopen, {
+            onEnter: function (args) {
+                var pathptr = args[0];
+                if (pathptr) {
+                    this.path = (pathptr).readCString();
+                    if (this.path.indexOf(module_name) >= 0) {
+                        this.canhook = true;
+                        console.log("dlopen:", this.path);
+                    }
+                }
+            },
+            onLeave: function (retval) {
+                if (this.canhook) {
+                    console.log("[*] dlopen can hook");
+                }
+            }
+        });
+    }
+    console.log("android_dlopen_ext:", android_dlopen_ext, "dlopen:", dlopen);
+}
+```
+
+详情：
+
+* [Github: hook diopen & android_dlopen_ext](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_artmethod.js)
+* [Android System.loadLibrary深度剖析](https://blog.csdn.net/xt_xiaotian/article/details/122296084)
+
+​         
+
+#### 7）调用APP Router实现schema跳转
+
+假设DemoAPP的Router实例调用格式定义如下：
+
+```java
+// 包名: com.android.router
+// Builder是RouteRequest类的子类
+APPRouter.routeTo(RouteRequest.Builder(url).build(), Application)
+```
+
+frida调用方式
+
+```typescript
+Java.perform(function() {
+    setTimeout(function() {
+        Java.choose('android.app.Application', {
+            onComplete: function() {
+
+            },
+            onMatch: function(instance) {
+                const schema = "demoapp://test_schema"
+                console.log("[*] routing to: " + schema);
+                
+                // 子类
+                const RouteRequestBuilder = Java.use('com.android.router.RouteRequest$Builder');
+                var request = RouteRequestBuilder.$new(schema).build()
+                console.log(Java.use('com.android.router').routeTo(request, instance));
+            }
+        })
+    }, 3000);
+})
+```
+
+​      
+
+#### 8）assert断言验证
+
+配合frida动态测试框架，通过assert模块断言验证执行结果的准确性
+
+```typescript
+import assert from "assert";
+
+export function image_test() {
+    // assert
+    assert.strictEqual(1, 1, "[*] image_test assert pass");
+
+    const apples = 1;
+    const oranges = 1;
+    assert.strictEqual(apples, oranges, `image: apples ${apples} !== oranges ${oranges}`);
+    console.log("[*] image test complete")
+}
+
+export function hook_view_click() {
+    const View = Java.use('android.view.View');
+    View.setOnClickListener.implementation = function (v: Object) {
+        assert.ok(true, "[*] hook_view_click assert pass");
+        this.setOnClickListener(v);
+    };
+}
+```
+
+​     
 
 ### 4.2 frida on iOS
 
@@ -1190,3 +1434,4 @@ if __name__ == '__main__':
 7. [glider菜鸟: frida源码阅读之frida-java](https://bbs.pediy.com/thread-229215.htm)
 8. [Frida开发环境搭建记录](https://blog.csdn.net/qq_38851536/article/details/104895878)
 9. [[原创]FRIDA 使用经验交流分享 frida + typescript](https://bbs.pediy.com/thread-265160.htm)
+9. [JavaScript: assert 模块](https://javascript.ruanyifeng.com/nodejs/assert.html)

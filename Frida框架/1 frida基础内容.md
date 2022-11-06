@@ -189,9 +189,13 @@ frida -U -f com.atebits.Tweetie2
 # 如果启动应用后被强制退出或不想再额外输入 %resume，可以加上 --no-pause
 frida -U -f com.atebits.Tweetie2 --no-pause
 
+# attach 前台应用, 并注入js脚本执行
+frida -U -F -l xxx.js
+
 # 支持参数:
 # -l 指定加载一个Javascript脚本
 # -U 指定对USB设备操作
+# -F 绑定前台应用
 
 # frida特殊指令:
 # 1) %load / %unload：载⼊/卸载⽂件中的 js
@@ -735,6 +739,7 @@ Java.perform(function () {
 3. [Frida 安装和使用](https://www.jianshu.com/p/bab4f4714d98)
 3. [frida的用法--Hook Java代码篇](https://www.jianshu.com/p/f98aca8f3c05)
 3. [FRIDA-API：Java、Interceptor、NativePointer(Function/Callback)](https://www.anquanke.com/post/id/195869#h2-13)
+3. [Frida工作原理学习(1)](https://bbs.pediy.com/thread-273450.htm)
 
 ​     
 
