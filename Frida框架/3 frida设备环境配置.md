@@ -363,11 +363,10 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 > import com.bilibili.luna.LunaApp;
 > 
 > public class DemoApp extends Application {
-> 		// libFridaGadget.so 初始化代码
+> 	// libFridaGadget.so 初始化代码
 >     static {
 >         try {
->           	// 加载so文件, 文件名格式 "libsXXX.so"
->           	// 比如: libs/arm64-v8a/libFridaGadget.so
+>         // 加载so文件, 文件名格式 "libsXXX.so",比如: libs/arm64-v8a/libFridaGadget.so
 >             System.loadLibrary("FridaGadget");
 >         } catch (Exception ex) {
 >             ex.printStackTrace();
