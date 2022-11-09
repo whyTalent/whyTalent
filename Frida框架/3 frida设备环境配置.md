@@ -6,7 +6,22 @@
 
 # 一、frida-server 
 
- 
+```shell
+## apk resign
+# apktool 解压
+apktool d pink.apk
+
+# apktool 压缩
+apktool b pink/
+
+# 生成 keystore 文件：
+keytool -genkey -alias debug.keystore -keyalg RSA -validity 20000 -keystore debug.keystore
+
+# apk 签名：
+java -jar apksigner.jar sign -verbose --ks debug.keystore --v1-signing-enabled false --v2-signing-enabled true --ks-key-alias debug.keystore  --out signed.apk pink.apk
+```
+
+​       
 
 ## 1、Android
 
@@ -318,36 +333,72 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 
  **方式二**：
 
-> **操作**：java层代码直接system.load加载so文件
+> **操作**：源码内部引入第三方so文件 [frida-gadget.so](https://github.com/frida/frida/releases)，即将文件复制到APP项目内任意模块的 JNI libs 目录，并增加 libFG.so 初始化代码（注：可选择在hook时机更早的APP初始化阶段引入）
+>
+> 1）Android Studio 中所有的库文件都可以扔进「libs」目录，因此将 SO 文件及上层文件夹复制到 Module 的「libs」目录。如下示例：
+>
+> <div align="center"><img src="imgs/libs-so.png" alt="libs so" style="zoom:50%;" /></div>
+>
+> 2）由于 Java 代码调用 SO 库涉及到跨语言交互，所以必须通过  JNI（Java Native Interface）进行，同时，通过 JNI 交互的文件也必须通过标识才能被 Android Studio 处理，因此还需要在 Module 的 build.gradle 中加入如下代码
 >
 > ```java
-> import dagger.hilt.android.HiltAndroidApp;
+> // build.gradle
 > 
-> import com.app.gripper.TestApp;
-> 
-> @HiltAndroidApp
-> public class HiltApplication extends TestApp {
-> 
->     static {
->         if (com.app.base.TestContext.isMainProcess()) {
->             try { 
->                 // 直接加载frida so库
->                 System.loadLibrary("FG"); 
->             } catch (Exception ex) {
->                 ex.printStackTrace();
->             }
+> android {
+>     ...
+>     sourceSets {
+>         main {
+>             jniLibs.srcDirs = ['libs']
 >         }
 >     }
 > }
+> ```
+>
+> 3）APP初始化阶段加载so文件
+>
+> ```java
+> // DemoApp.java
 > 
-> // 注: Android有多进程，为避免子进程影响，可以在 AndroidManifest.xml 文件内删除子进程相关配置，比如: android:process=":web" 等
+> import android.app.Application;
+> import com.bilibili.luna.LunaApp;
+> 
+> public class DemoApp extends Application {
+> 		// libFridaGadget.so 初始化代码
+>     static {
+>         try {
+>           	// 加载so文件, 文件名格式 "libsXXX.so"
+>           	// 比如: libs/arm64-v8a/libFridaGadget.so
+>             System.loadLibrary("FridaGadget");
+>         } catch (Exception ex) {
+>             ex.printStackTrace();
+>         }
+>     }
+> 
+>     @Override
+>     public void onCreate() {
+>         super.onCreate();
+>         LunaApp.init(this);
+>     }
+> }
+> ```
+>
+> 注：frida-gadget.so 文件需要与Android设备的cpu处理器架构一致，否则APP启动时触发闪退，无法正常启动APP
+>
+> ```shell
+> # 查看cpu处理器架构
+> adb shell getprop ro.product.cpu.abi
+> 
+> # 比如: arm64-v8a, 则应选择对应CPU架构的so文件 frida-gadget-16.0.2-android-arm64.so
 > ```
 >
 > **风险点**：重打包检测（签名检测，so库检测冲突）
+>
+> **详情**：
+>
+> * [『Android Studio』如何导入 SO 库](https://liarrdev.github.io/post/How-to-Import-SO-in-Android-Studio/)
+> * [Android：发布aar包到maven仓库以及 maven插件 和 maven-publish 插件的区别](https://juejin.cn/post/7017608469901475847#heading-12)
 
-
-
-​       
+​             
 
 # 附录
 
