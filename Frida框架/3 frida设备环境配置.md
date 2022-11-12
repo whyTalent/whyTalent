@@ -329,6 +329,10 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 > * [玩转Android10源码开发定制(九)内置frida-gadget so文件和frida-server可执行文件到系统](https://bbs.pediy.com/thread-264916.htm)
 > * [[原创]FridaManager:Frida脚本持久化解决方案](https://bbs.pediy.com/thread-266767.htm)
 
+https://github.com/hanbinglengyue/FridaManager
+
+
+
 ​      
 
  **方式二**：
@@ -339,7 +343,7 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 >
 > <div align="center"><img src="imgs/libs-so.png" alt="libs so" style="zoom:50%;" /></div>
 >
-> 2）由于 Java 代码调用 SO 库涉及到跨语言交互，所以必须通过  JNI（Java Native Interface）进行，同时，通过 JNI 交互的文件也必须通过标识才能被 Android Studio 处理，因此还需要在 Module 的 build.gradle 中加入如下代码
+> 2）由于 Java 代码调用 SO 库涉及到跨语言交互，所以必须通过  `JNI`（Java Native Interface）进行，同时，通过 JNI 交互的文件也必须通过标识才能被 Android Studio 处理，因此还需要在 Module 的 build.gradle 中加入如下代码
 >
 > ```java
 > // build.gradle
@@ -360,7 +364,7 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 > // DemoApp.java
 > 
 > import android.app.Application;
-> import com.bilibili.luna.LunaApp;
+> import com.whytalent.luna.TestApp;
 > 
 > public class DemoApp extends Application {
 > 	// libFridaGadget.so 初始化代码
@@ -376,7 +380,7 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 >     @Override
 >     public void onCreate() {
 >         super.onCreate();
->         LunaApp.init(this);
+>         TestApp.init(this);
 >     }
 > }
 > ```
