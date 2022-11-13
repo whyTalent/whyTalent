@@ -486,12 +486,60 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 
 **操作**：目标app有使用so，解包利用lief工具把frida-gadget和目标app的so链接到一起然后再重打包，实现加载和hook。优点在于可以让gadget是第一个启动的，缺点是没有so的apk不能用
 
-> **风险点**：重打包检测（签名检测，文件完整性检测）
+> a. **apk注入加载so逻辑**
 >
-> **详情**：
+> 即APK包内寻找指定so名称（第一个启动的so文件）, 然后通过 lief 工具把frida-gadget和目标app的so链接
 >
-> * [[翻译]在未root的设备上使用frida](https://bbs.pediy.com/thread-229970.htm)
->* [非root环境下frida的两种使用方式](https://nszdhd1.github.io/2021/06/15/%E9%9D%9Eroot%E7%8E%AF%E5%A2%83%E4%B8%8Bfrida%E7%9A%84%E4%B8%A4%E7%A7%8D%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F/)
+> ```python
+> # 遍历apk中指定SO有哪几种架构，并添加 gadget.so 为依赖库
+> for soname in injectsolist:
+>   # x86有一点问题，且不支持x86_64
+>   if soname.find("x86") != -1:
+>     continue
+> 
+>     # 返回值是一个指向LIEF::Binary对象的指针
+>     so = lief.parse(os.getcwd() + "/" + soname)
+>     # 注入frida-gadget.so文件
+>     so.add_library("libFG.so")
+>     # 重建写入新文件
+>     so.write(soname + "gadget.so")
+> ```
+>
+> b. **写入 frida-gadget.so 和 已链接的so文件输出新apk文件**
+>
+> 即将上述注入so文件加载逻辑的新 so文件 和 第三方so资源文件写入新apk文件
+>
+> ```python
+> # 过滤指定so名称的文件路径
+> if item.filename.find(self.soname) != -1 and os.path.exists(
+>   os.getcwd() + "/" + item.filename + "gadget.so"):
+> 
+>   # 覆写so文件
+>   out_file.write(os.getcwd() + "/" + item.filename + "gadget.so", arcname=item.filename)
+> ```
+>
+> c.  **apk重签名**
+>
+> 同上
+>
+> ​     
+>
+> **注意：**
+>
+> > 1）签名检测问题：
+> >
+> > ```shell
+> > adb: failed to install output/app-debug_frida_signed.apk: Failure [INSTALL_FAILED_USER_RESTRICTED: Invalid apk]
+> > ```
+> >
+> > 具体原因分析定位中...
+
+**风险点**：重打包检测（签名检测，文件完整性检测）
+
+**详情**：
+
+* [[翻译]在未root的设备上使用frida](https://bbs.pediy.com/thread-229970.htm)
+* [非root环境下frida的两种使用方式](https://nszdhd1.github.io/2021/06/15/%E9%9D%9Eroot%E7%8E%AF%E5%A2%83%E4%B8%8Bfrida%E7%9A%84%E4%B8%A4%E7%A7%8D%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F/)
 
 
 
