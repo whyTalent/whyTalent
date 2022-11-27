@@ -389,13 +389,13 @@ System.loadLibrary()和System.load()的区别：
 
 > 1）loadLibray传入的是编译脚本指定生成的so文件名称，一般不需要包含开头的lib和结尾的.so，而load传入的是so文件所在的绝对路径
 >
-> 2）loadLibrary传入的不能是路径，查找so时会优先从应用本地路径下(/data/data/${package-name}/lib/arm/)进行查找，不存在的话才会从系统lib路径下(/system/lib、/vendor/lib等)进行查找；而load则没有路径查找的过程
+> 2）loadLibrary传入的不能是路径，查找so时会优先从 ***应用本地路径*** 下(/data/data/${package-name}/lib/arm/)进行查找，不存在的话才会从 ***系统lib路径*** 下(/system/lib、/vendor/lib等)进行查找；而load则没有路径查找的过程
 >
-> 3）load传入的不能是sdcard路径，会导致加载失败，一般只支持应用本地存储路径/data/data/${package-name}/，或者是系统lib路径system/lib等这2类路径
+> 3）load传入的不能是sdcard路径，会导致加载失败，一般只支持应用本地存储路径/data/data/${package-name}/，或者是系统lib路径 system/lib 等这2类路径
 >
-> 4）loadLibrary加载的都是一开始就已经打包进apk或系统的so文件了，而load可以是一开始就打包进来的so文件，也可以是后续从网络下载，外部导入的so文件
+> 4）loadLibrary加载的都是 **一开始就已经打包进apk或系统的so文件**了，而load可以是一开始就打包进来的so文件，也可以是后续从网络下载，外部导入的so文件
 >
-> 5）重复调用loadLibrar, load并不会重复加载so，会优先从已加载的缓存中读取，所以只会加载一次
+> 5）重复调用loadLibrary, load并不会重复加载so，会优先从已加载的缓存中读取，所以只会加载一次
 >
 > 6）加载成功后会去搜索so是否有"JNI_OnLoad"，有的话则进行调用，所以"JNI_OnLoad"只会在加载成功后被主动回调一次，一般可以用来做一些初始化的操作，比如动态注册jni相关方法等
 
@@ -429,7 +429,7 @@ Java.perform(function() {
         console.log("[*] Loading dynamic library => " + library);
         try {
             // android OAID 动态链接库加载
-            // PS: frida实践过程so库发现影响APP启动,跳过so库加载逻辑,规避导致此问题,理论上不影响APP整体功能
+            // PS: frida实践过程so库发现影响APP启动,跳过该so库加载逻辑,规避导致此问题,理论上不影响APP整体功能
             if(library === 'msaoaidsec') {
                 return;
             }
@@ -471,16 +471,19 @@ Java.perform(function(){
 
 * [Android 加载动态链接库的过程及其涉及的底层原理](https://pqpo.me/2017/05/31/system-loadlibrary/)
 * [[原创]frida hook loadLibrary](https://bbs.pediy.com/thread-263072.htm)
-* [Github: hook diopen & android_dlopen_ext](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_artmethod.js)
+* [frida-codeshare system.loadlibrary](https://codeshare.frida.re/@dzonerzy/whereisnative/)
 
 ​         
 
 #### 6）hook dlopen 和 android_dlopen_ext
 
-```typescript
-function hook_dlopen(module_name) {
-    var android_dlopen_ext = Module.findExportByName(null, "android_dlopen_ext");
+dlopen：打开一个动态链接库，在dlopen的()函数以指定模式打开指定的动态连接库文件，并返回一个句柄给调用进程
 
+```typescript
+// hook_dlopen("libart.so", hook_native);
+
+function hook_dlopen(module_name, func) {
+    var android_dlopen_ext = Module.findExportByName(null, "android_dlopen_ext");
     if (android_dlopen_ext) {
         Interceptor.attach(android_dlopen_ext, {
             onEnter: function (args) {
@@ -496,6 +499,7 @@ function hook_dlopen(module_name) {
             onLeave: function (retval) {
                 if (this.canhook) {
                     console.log("[*] android_dlopen_ext can hook");
+                    fun();
                 }
             }
         });
@@ -517,11 +521,47 @@ function hook_dlopen(module_name) {
             onLeave: function (retval) {
                 if (this.canhook) {
                     console.log("[*] dlopen can hook");
+                    fun();
                 }
             }
         });
     }
     console.log("android_dlopen_ext:", android_dlopen_ext, "dlopen:", dlopen);
+}
+
+function hook_native() {
+    var module_libart = Process.findModuleByName("libart.so");
+    var symbols = module_libart.enumerateSymbols();
+    var ArtMethod_Invoke = null;
+    for (var i = 0; i < symbols.length; i++) {
+        var symbol = symbols[i];
+        var address = symbol.address;
+        var name = symbol.name;
+        var indexArtMethod = name.indexOf("ArtMethod");
+        var indexInvoke = name.indexOf("Invoke");
+        var indexThread = name.indexOf("Thread");
+        if (indexArtMethod >= 0
+            && indexInvoke >= 0
+            && indexThread >= 0
+            && indexArtMethod < indexInvoke
+            && indexInvoke < indexThread) {
+            console.log(name);
+            ArtMethod_Invoke = address;
+        }
+    }
+  
+    if (ArtMethod_Invoke) {
+        Interceptor.attach(ArtMethod_Invoke, {
+            onEnter: function (args) {
+                var method_name = prettyMethod(args[0], 0);
+                if (!(method_name.indexOf("java.") == 0 || method_name.indexOf("android.") == 0)) {
+                    console.log("ArtMethod Invoke:" + method_name + '  called from:\n' +
+                        Thread.backtrace(this.context, Backtracer.ACCURATE)
+                            .map(DebugSymbol.fromAddress).join('\n') + '\n');
+                }
+            }
+        });
+    }
 }
 ```
 
@@ -529,6 +569,7 @@ function hook_dlopen(module_name) {
 
 * [Github: hook diopen & android_dlopen_ext](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_artmethod.js)
 * [Android System.loadLibrary深度剖析](https://blog.csdn.net/xt_xiaotian/article/details/122296084)
+* [Android链接器命名空间](https://source.android.com/docs/core/architecture/vndk/linker-namespace?hl=zh-cn)
 
 ​         
 
@@ -595,6 +636,114 @@ export function hook_view_click() {
 
 ​     
 
+#### 9）hook RegisterNatives
+
+JNI函数的注册一般分为两种：**静态注册和动态注册**
+
+> 静态注册：通过固定的命名规则映射Java和native函数, 即
+>
+> ```c++
+> extern "C" JNIEXPORT RETURN_TYPE JNICALL Java_PackageConnectedByUnderline_ClassName_FunctionName(JNIEnv *env, jobject /* this */,  ... params)
+>   
+> // 例如: com.wsy.jnidemo.MainActivity类中的定义的方法
+> public native String testExceptionNotCrash(int i) throws CustomException;
+> 
+> // 对应C++方法
+> extern "C" JNIEXPORT jstring JNICALL 
+> Java_com_wsy_jnidemo_MainActivity_testExceptionNotCrash(
+>         JNIEnv *env,
+>         jobject /* this */, jint i)
+> ```
+>
+> 动态注册：通过重写`JNI_OnLoad`函数，用`jint RegisterNatives(jclass clazz, const JNINativeMethod* methods, jint nMethods)` 函数将Java中定义的native函数和C/C++中定义的函数进行映射。
+>
+> ```c++
+> // 编写JNI_OnLoad函数，在其内部实现动态注册
+> 
+> // java方法
+> public native String dynamicRegister();
+> 
+> // c++方法
+> jstring dynamicRegister(JNIEnv *jniEnv, jobject obj) {
+>     return jniEnv->NewStringUTF("dynamicRegister");
+> }
+> 
+> int JNI_OnLoad(JavaVM *javaVM, void *reserved) {
+>        JNIEnv *jniEnv;
+>   if (JNI_OK == javaVM->GetEnv((void **) (&jniEnv), JNI_VERSION_1_4)) {
+>       // 动态注册的Java函数所在的类
+>       jclass registerClass = jniEnv->FindClass("com/wsy/jnidemo/MainActivity");
+>       JNINativeMethod jniNativeMethods[] = {
+>               //3个参数分别为 Java函数的名称，Java函数的签名（不带函数名），本地函数指针
+>                {"dynamicRegister", "()Ljava/lang/String;", (void *) (dynamicRegister)}
+>       };
+>        if (jniEnv->RegisterNatives(registerClass, jniNativeMethods,
+>                                    sizeof(jniNativeMethods) / sizeof((jniNativeMethods)[0])) < 0) {
+>            return JNI_ERR;
+>        }
+>    }
+>    return JNI_VERSION_1_4;
+> }
+> ```
+>
+> 需要注意到的是，在进行动态注册时，由于动态注册时传入的是函数指针，因此即使函数名发生了变更也不会导致运行时找不到对应的函数，所以不用加`extern "C"`、`JNIEXPORT`这些标识。
+
+```javascript
+function find_RegisterNatives(params) {
+    let symbols = Module.enumerateSymbolsSync("libart.so");
+    let addrRegisterNatives = null;
+    for (let i = 0; i < symbols.length; i++) {
+        let symbol = symbols[i];
+        
+        //符号symbol: _ZN3art3JNI15RegisterNativesEP7_JNIEnvP7_jclassPK15JNINativeMethodi
+        if (symbol.name.indexOf("art") >= 0 &&
+                symbol.name.indexOf("JNI") >= 0 && 
+                symbol.name.indexOf("RegisterNatives") >= 0 && 
+                symbol.name.indexOf("CheckJNI") < 0) {
+            addrRegisterNatives = symbol.address;
+            console.log("RegisterNatives is at ", symbol.address, symbol.name);
+            hook_RegisterNatives(addrRegisterNatives)
+        }
+    }
+
+}
+
+function hook_RegisterNatives(addrRegisterNatives) {
+		// symbol 地址判断
+    if (addrRegisterNatives != null) {
+        Interceptor.attach(addrRegisterNatives, {
+            onEnter: function (args) {
+                console.log("[RegisterNatives] method_count:", args[3]);
+                let java_class = args[1];
+                let class_name = Java.vm.tryGetEnv().getClassName(java_class);
+                // console.log(class_name);
+
+                let methods_ptr = ptr(args[2]);
+
+                let method_count = parseInt(args[3]);
+                for (let i = 0; i < method_count; i++) {
+                    let name_ptr = Memory.readPointer(methods_ptr.add(i * Process.pointerSize * 3));
+                    let sig_ptr = Memory.readPointer(methods_ptr.add(i * Process.pointerSize * 3 + Process.pointerSize));
+                    let fnPtr_ptr = Memory.readPointer(methods_ptr.add(i * Process.pointerSize * 3 + Process.pointerSize * 2));
+
+                    let name = Memory.readCString(name_ptr);
+                    let sig = Memory.readCString(sig_ptr);
+                    let symbol = DebugSymbol.fromAddress(fnPtr_ptr)
+                    console.log("[RegisterNatives] java_class:", class_name, "name:", name, "sig:", sig, "fnPtr:", fnPtr_ptr,  " fnOffset:", symbol, " callee:", DebugSymbol.fromAddress(this.returnAddress));
+                }
+            }
+        });
+    }
+}
+```
+
+详情：
+
+* [github: hook RegisterNatives](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_RegisterNatives.js)
+* [Android JNI介绍（三）- Java和Native的互相调用](https://juejin.cn/post/6844904025826000904#heading-5)
+
+​     
+
 ### 4.2 frida on iOS
 
 **frida-objc**：对应 Java，ObjC api 是 frida 的另⼀个“⼀等公⺠”，源代码 github/frida/frida-objc，与 JVM 类似，Objective C 也提供了 runtime api，其次frida 将 Objective C 的部分 runtime api 提供到 ObjC.api 中
@@ -623,6 +772,8 @@ NSString.stringWithString_("Hello World”);
 firda提供了3种方式hook objective C方法：
 
 > 1）`ObjC.classes.Class.method` 以及 `ObjC.Block` ：都提供了⼀个 `.implementation` （获取内存地址）的 setter 来 hook ⽅法实现，实际上就是 iOS 开发者熟悉的 **Method Swizzling**
+>
+> > **Method Swizzling**，顾名思义，就是交换两个方法的实现，简单来说，就是利用Objective-C Runtime的动态绑定特性，将一个方法的实现与另 一个方法的实现进行交换
 >
 > 2）使⽤拦截器  `Interceptor.attach(ObjC.classes.Class.method.implementation)`，看上去很相似，但实现原理是对 selector 指向的代码进⾏ inline hook
 >
