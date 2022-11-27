@@ -1422,16 +1422,29 @@ if __name__ == '__main__':
 
 ​           
 
-
 # 附录
 
+
+
+## 基础
+
 1. [FRIDA 实用手册](https://zhuanlan.zhihu.com/p/56702055)
-2. [hacktricks: frida-tutorial-2](https://book.hacktricks.xyz/mobile-pentesting/android-app-pentesting/frida-tutorial/frida-tutorial-2)
-3. [Python frida.get_device() Examples](https://www.programcreek.com/python/example/111316/frida.get_device)
 4. [Frida从入门到放弃](http://www.gouzai.pw/2019/03/07/Frida%E4%BB%8E%E5%85%A5%E9%97%A8%E5%88%B0%E6%94%BE%E5%BC%83/)
 5. [全平台逆向工程资料](https://github.com/alphaSeclab/awesome-reverse-engineering/blob/master/Readme_full.md)
 6. [（黑科技）Frida的用法--Hook Java代码篇](https://007.tg/2020/10/27/1452/)
 7. [glider菜鸟: frida源码阅读之frida-java](https://bbs.pediy.com/thread-229215.htm)
-8. [Frida开发环境搭建记录](https://blog.csdn.net/qq_38851536/article/details/104895878)
-9. [[原创]FRIDA 使用经验交流分享 frida + typescript](https://bbs.pediy.com/thread-265160.htm)
-9. [JavaScript: assert 模块](https://javascript.ruanyifeng.com/nodejs/assert.html)
+
+   
+
+## Frida- python
+
+1. [JavaScript: assert 模块](https://javascript.ruanyifeng.com/nodejs/assert.html)
+2. [frida-python学习](http://static.kancloud.cn/ay66544/aypy/2941682)
+3. [Python frida.get_device() Examples](https://www.programcreek.com/python/example/111316/frida.get_device)
+4. [hacktricks: frida-tutorial-2](https://book.hacktricks.xyz/mobile-pentesting/android-app-pentesting/frida-tutorial/frida-tutorial-2)
+
+​     
+
+## Frida- compile
+
+1. [[原创]FRIDA 使用经验交流分享 frida + typescript](https://bbs.pediy.com/thread-265160.htm)

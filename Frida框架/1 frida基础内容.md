@@ -27,6 +27,14 @@ Frida功能不仅仅是 `Hook`，还包括以下这些功能：
 >
 > Hook，跟踪和拦截函数等等
 
+​      
+
+**frida hook有两种模式**
+
+> **attach模式**： attach到已经存在的进程，核心原理是ptrace修改进程内存。如果此时进程已经处于调试状态（比如做了反调试），则会attach失败；
+>
+> **spawn模式**：启动一个新的进程并挂起，在启动的同时注入frida代码，适用于在进程启动前的一些hook，比如hook RegisterNative函数，注入完成后再调用resume恢复进程；
+
 ​     
 
 # 二 环境配置

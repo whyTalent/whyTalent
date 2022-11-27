@@ -937,9 +937,9 @@ $ objection patchapk -s yourapp.apk
 > $ memory list modules --json test.json # 查看到其所有so 并保存位json （终端所在目录）
 > $ memory list exports [lib_name]  # 查看指定模块的导出函数
 > $ memory list exports [lib_name] --json libart.json # 将结果保存到json文件中
-> $ memory search --string --offsets-only # 内存搜索
+> $ memory search "Authorization-QS" --string --offsets-only # 内存搜索, 即想要在内存里面找和这个Authorization-QS相关的内存的偏移地址
 > 
-> # 2) Heap 指令
+> # 2) Android Heap 指令
 > $ android heap search instances com.xx.xx.class # 堆内存中搜索指定类的实例, 可以获取该类的实例id
 > $ android heap execute [ins_id] [func_name]  # 直接调用指定实例下的方法
 > $ android heap execute [ins_id]  # 自定义frida脚本, 执行实例的方法
@@ -947,25 +947,73 @@ $ objection patchapk -s yourapp.apk
 > # 3) 内存漫游
 > $ android hooking search classes [search_name]  # 在内存中所有已加载的类中搜索包含特定关键词的类
 > $ android hooking search methods [search_name]  # 在内存中所有已加载的方法中搜索包含特定关键词的方法
-> $ android hooking generate simple [class_name]  # 辅助直接生成hook代码
-> $ android hooking list activities # 打印所有 activities （页面）
+> $ android hooking generate simple [class_name]  # 辅助直接生成hook代码, 可以注入js或者frida使用
 > $ android hooking list classes # 列出内存中所有的类classes
 > $ android hooking list class_methods sun.util.locale.LanguageTag # 打印方法体
+> 
+> # 4) hook 方式
 > $ android hooking watch class 包名.类名  # hook类的所有方法
 > $ android hooking watch class_method 包名.类名.方法 "参数1,参数2"  # 如果只需hook其中一个重载函数, 指定参数类型, 多个参数用逗号分隔
 > $ android hooking watch class_method 包名.类名.方法 --dump-args --dump-backtrace --dump-return #快速hook, 默认会Hook方法的所有重载
 > # --dump-args : 打印参数
 > # --dump-backtrace : 打印调用栈
 > # --dump-return : 打印返回值
+> $ android hooking set return_value com.xxx.xxx.methodName false  # 设置返回值(只支持bool类型)
 > 
-> # 4) activity 和 service 操作
+> # 5) activity 和 service 操作
+> $ android hooking list activities # 打印所有 activities （页面）
 > $ android intent launch_activity [activity_class] # 强行启动指定activities 可以强行启懂页面
-> $ android intent launch_service [services_class] //启动services
+> $ android hooking list services   # 枚举services
+> $ android intent launch_service [services_class] # 启动services
 > 
-> # 5）其它指令
+> # 6) 任务管理器
+> $ jobs list   # 查看 hook 任务列表
+> $ jobs kill [job ID]  # 杀死任务
+> 
+> # 7) android 指令
+> $ android root disable   # 尝试关闭app的root检测
+> $ android root simulate  # 尝试模拟root环境
+> $ android ui screenshot [image.png]    # 截图
+> $ android ui FLAG_SECURE false         # 设置FLAG_SECURE权限
+> 
+> # 8) 监控系统剪贴板
+> # 获取Android剪贴板服务上的句柄并每5秒轮询一次用于数据; 如果发现新数据，与之前的调查不同，则该数据将被转储到屏幕上
+> $ help android  clipboard
+> 
+> # 9) 监控系统剪贴板
+> $ help android shell_exec [command]
+> 
+> # 10）其它指令
 > $ frida-ps -U |grep xxx # 筛选过滤
 > $ file download [file] [outfile] # 从远程文件系统中下载文件
 > ```
+
+​       
+
+Objection注入报错
+
+> 现象：frida.core.RPCException: Error: expected a pointer
+>
+> 说明：
+>
+> 1）`双进程保护`：
+>
+> * 采用双进程的方式，对父进程进行保护，基于信号的发送和接收，实现相互的保护防止被动态攻击；
+> * 简单的双进程保护，就是从原进程再fork一个空进程出来，让逆向分析的时候附加到空进程中导致hook不上；
+> * 双进程进程保护主要功能： 
+>   * A. 保护父进程，ptrace所有线程，防止被附加、调试、暂停； 
+>   * B. 保护子进程，防止被暂停、异常退出
+>
+> 2）frida hook有两种模式：
+>
+> * `attach模式`：attach到已经存在的进程，核心原理是ptrace修改进程内存。如果此时进程已经处于调试状态（比如做了反调试），则会attach失败；
+> * `spawn模式`：启动一个新的进程并挂起，在启动的同时注入frida代码，适用于在进程启动前的一些hook，比如hook RegisterNative函数，注入完成后再调用resume恢复进程；
+>
+> frida附加的顺序：`spawn` -> `resume` -> `attach`
+>
+> objection附加的顺序：`spawn` -> `attach` -> `resume`
+>
+> 从而可以看出，objection注入失败应该是因为objection通过spawn启动app之后attach时机比较快，然后app又正在复制进程，所以app卡死了，objection也卡死了。
 
 ​         
 
