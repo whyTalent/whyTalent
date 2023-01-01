@@ -640,7 +640,9 @@ export function hook_view_click() {
 
 JNI函数的注册一般分为两种：**静态注册和动态注册**
 
-> 静态注册：通过固定的命名规则映射Java和native函数, 即
+> a. 静态注册
+>
+> 通过固定的命名规则（`Java _ 包名 _ 类名 _ 方法名`）映射Java和native函数, 即
 >
 > ```c++
 > extern "C" JNIEXPORT RETURN_TYPE JNICALL Java_PackageConnectedByUnderline_ClassName_FunctionName(JNIEnv *env, jobject /* this */,  ... params)
@@ -655,7 +657,27 @@ JNI函数的注册一般分为两种：**静态注册和动态注册**
 >         jobject /* this */, jint i)
 > ```
 >
-> 动态注册：通过重写`JNI_OnLoad`函数，用`jint RegisterNatives(jclass clazz, const JNINativeMethod* methods, jint nMethods)` 函数将Java中定义的native函数和C/C++中定义的函数进行映射。
+> b. 动态注册
+>
+> 不同于静态注册中在Java类中定义好native方法后由编译器生成JNI方法，动态注册基本思想是在 `JNI_Onload()` 函数中通过JNI中提供的 `RegisterNatives()` 方法将Java中定义的native函数和C/C++中定义的函数进行映射, JNI_OnLoad ()函数会在调用 System.loadLibrary的时候回调。
+>
+> 注册整体流程如下
+>
+> ```shell
+> 1. 定义Java类中的native方法
+> 2. 编写C/C++代码, 实现JNI_Onload()方法
+> 3. 将 Java 方法和 C/C++方法通过 `签名信息` 对应起来
+> 4. 通过JavaVM获取`JNIEnv`, JNIEnv主要用于获取Java类和调用一些JNI提供的方法
+> 5. 使用类名和对应起来的方法作为参数, 调用JNI提供的函数RegisterNatives(jclass clazz, const JNINativeMethod* methods, jint nMethods)注册方法, 其中一个需要注册native函数的上层Java类，第二个表示注册的方法结构体信息JNINativeMethod数组，第三个是需要注册的方法个数
+> 
+> typedef struct {
+> 	const char* name;      # 方法名
+> 	const char* signature; # 方法的签名
+> 	void*       fnPtr;     # 对应的native函数地址
+> } JNINativeMethod;
+> ```
+>
+> 示例：
 >
 > ```c++
 > // 编写JNI_OnLoad函数，在其内部实现动态注册
@@ -688,6 +710,31 @@ JNI函数的注册一般分为两种：**静态注册和动态注册**
 >
 > 需要注意到的是，在进行动态注册时，由于动态注册时传入的是函数指针，因此即使函数名发生了变更也不会导致运行时找不到对应的函数，所以不用加`extern "C"`、`JNIEXPORT`这些标识。
 
+​      
+
+**Demo1**: 计算RegisterNatives函数地址
+
+```javascript
+Java,perform(function() {
+  var env = Java.vm.getEnv();
+  var handlerPointer = Memory.readPointer(env.handle);
+  // frida 内部通过函数在 JNIEnv 中的地址偏移计算指定的函数地址
+  var nativePointer = Memory.readPointer(handlerPointer.add(215 * Process.pointerSize));
+  
+  // jint RegisterNatives(jclass clazz, const JNINativeMethod* methods, jint nMethods)
+  send("net native pointers: " + nativePointer)
+  Interceptor.attach(nativePointer, {
+    onEnter: function(args) {
+      send("netcrypt so args: " + args[0] + ", " + args[1] + ", " + args[2] + ", " + args[3])
+    }
+  })
+})
+```
+
+​     
+
+**Demo2**: Frida hook registernative方法，打印相关参数值
+
 ```javascript
 function find_RegisterNatives(params) {
     let symbols = Module.enumerateSymbolsSync("libart.so");
@@ -705,7 +752,6 @@ function find_RegisterNatives(params) {
             hook_RegisterNatives(addrRegisterNatives)
         }
     }
-
 }
 
 function hook_RegisterNatives(addrRegisterNatives) {
@@ -735,12 +781,16 @@ function hook_RegisterNatives(addrRegisterNatives) {
         });
     }
 }
+
+setImmediate(find_RegisterNatives);
 ```
 
 详情：
 
 * [github: hook RegisterNatives](https://github.com/lasting-yang/frida_hook_libart/blob/master/hook_RegisterNatives.js)
 * [Android JNI介绍（三）- Java和Native的互相调用](https://juejin.cn/post/6844904025826000904#heading-5)
+* [Android JNI学习-函数动态注册](https://david1840.github.io/2020/11/09/Android-JNI%E5%87%BD%E6%95%B0%E5%8A%A8%E6%80%81%E6%B3%A8%E5%86%8C/)
+* [[Android逆向之旅—抖音火山视频的Native注册混淆函数获取方法](http://www.520monkey.com/archives/1289)]
 
 ​     
 
