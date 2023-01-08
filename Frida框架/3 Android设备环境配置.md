@@ -1,18 +1,14 @@
-## Frida 环境配置
+# Android-Frida 环境配置
 
-下面简单记录frida在 Android 和 iOS 上分别使用 `frida-server` 和 `frida-gadget` 2种环境配置方式，为后续进一步学习实践~
+下面简单记录frida在 Android 上使用 `frida-server` 和 `frida-gadget` 2种环境配置方式，为后续进一步学习实践~
 
 ​       
 
 # 一、基础知识
 
-​    
+​     
 
-## 1、Android
-
-   
-
-### 1.1 基础概念
+## 1 概念
 
 HTTPS 在消息通信时，必须至少解决两个问题：一是确保消息来源的真实性，二是确保消息不会被第三方篡改。
 
@@ -32,7 +28,7 @@ HTTPS 在消息通信时，必须至少解决两个问题：一是确保消息�
 
 ​      
 
-### 1.2 打包流程
+## 2 打包流程
 
 整个Android的打包流程如下图所示： 
 
@@ -89,7 +85,7 @@ HTTPS 在消息通信时，必须至少解决两个问题：一是确保消息�
 
 ​      
 
-### 1.3 签名方案
+## 3 签名方案
 
 Android 应用的签名工具有两种：`jarsigner` 和 `apksigner`，它们的签名算法没什么区别，主要是签名使用的文件不同：
 
@@ -112,7 +108,7 @@ v1 到 v2 方案的升级，对开发者影响是最大的，就是渠道签署�
 
    
 
-#### 1）v1方案
+### 3.1 v1方案
 
 v1 签名不保护 APK 的某些部分，例如 ZIP 元数据。APK 验证程序需要处理大量不可信（尚未经过验证）的数据结构，然后会舍弃不受签名保护的数据，这会导致相当大的受攻击面，其中V1签名完之后是META-INF 目录下的三个文件：`MANIFEST.MF`、`CERT.SF`、`CERT.RSA`。
 
@@ -131,7 +127,7 @@ v1 签名不保护 APK 的某些部分，例如 ZIP 元数据。APK 验证程序
 
 ​       
 
-#### 2）v2方案
+### 3.2 v2方案
 
 APK 签名方案 v2 是一种全文件签名方案，该方案能够发现对 APK 的受保护部分进行的所有更改，从而有助于加快验证速度并增强完整性保证。
 
@@ -153,7 +149,7 @@ X-Android-APK-Signed: 2
 
 ​       
 
-#### 3）v3方案
+### 3.3 v3方案
 
 新版v3签名在v2的基础上，仍然采用检查整个压缩包的校验方式，不同的是在签名部分增可以添加新的证书（Attr块）。在这个新块中，会记录之前的签名信息以及新的签名信息，以密钥转轮的方案，来做签名的替换和升级。这意味着，只要旧签名证书在手，我们就可以通过它在新的 APK 文件中，更改签名。
 
@@ -167,7 +163,7 @@ v3 签名新增的新块（attr）存储了所有的签名信息，由更小的 
 
 ​       
 
-#### 4）v4方案
+### 3.4 v4方案
 
 Android 11 通过 APK 签名方案 v4 支持与流式传输兼容的签名方案，其中v4 签名基于根据 APK 的所有字节计算得出的 Merkle 哈希树，完全遵循 fs-verity 哈希树的结构（例如，对salt进行零填充，以及对最后一个分块进行零填充），其次Android 11 将签名存储在单独的 .apk.idsig 文件中，且需要 v2 或 v3 签名作为补充。
 
@@ -177,9 +173,9 @@ Android 11 通过 APK 签名方案 v4 支持与流式传输兼容的签名方案
 
 ​        
 
-### 1.4 签名步骤（工具）
+## 4 签名步骤（工具）
 
-#### 1）生成密钥文件
+### 4.1 生成密钥文件
 
 ```shell
 $ keytool -genkey -alias debug.keystore -keyalg RSA -validity 40000 -keystore debug.keystore
@@ -198,7 +194,7 @@ $ keytool -list -v -keystore 密钥库名
 
 ​     
 
-#### 2）签名
+### 4.2 签名
 
 执行顺序：
 
@@ -264,7 +260,7 @@ $ java -jar apksigner.jar sign --ks APPkeystore.jks --ks-key-alias alias_name --
 
 ​     
 
-#### 3）签名验证
+### 4.3 签名验证
 
 `keytool`：只支持V1签名校验
 
@@ -297,9 +293,9 @@ $ java -jar apksigner.jar sign --ks xxx.jks --ks-key-alias alias_name --min-sdk-
 
 ​     
 
-### 1.5 反编译&编译
+## 5 反编译&编译
 
-#### 1）apk 包
+### 5.1 apk 包
 
 [Apktool](https://ibotpeaches.github.io/Apktool/) 是一个反编译Android Apk的第三方工具，可以反编译资源，并在进行修改之后重新打包Apk。
 
@@ -330,7 +326,7 @@ $ apktool b -f -o out.apk extractfolder/
 
 ​      
 
-#### 2）smali & dex文件
+### 5.2 smali & dex文件
 
 [smali/baksmali ](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2FJesusFreke%2Fsmali)是Android的Java VM实现dalvik使用的dex格式的汇编程序/反汇编程序，语法基于Jasmin/ dedexer的语法，并支持dex格式的全部功能。
 
@@ -360,13 +356,9 @@ $ java -jar smali-2.5.2.jar assemble -o ./dex/classes.dex ./decompile
 
 # 二、frida-server 
 
-​       
-
-## 1、Android
-
 电脑 USB 连接安卓手机，针对设备是否 root 采用不同的方式
 
-### 1.1 root设备
+## 1 root设备
 
 >**1）**查看手机型号，下载系统对应版本的 [frida-server](https://github.com/frida/frida/releases)
 >
@@ -408,7 +400,7 @@ $ java -jar smali-2.5.2.jar assemble -o ./dex/classes.dex ./decompile
 
 ​       
 
-### 1.2 非root设备
+## 2 非root设备
 
 > 1）**反编译 apk**，反编译之后生成 target_app_floder 文件夹
 >
@@ -498,53 +490,15 @@ $ java -jar smali-2.5.2.jar assemble -o ./dex/classes.dex ./decompile
 
 另一种非 root 方式：https://bbs.pediy.com/thread-229970.htm
 
-​             
-
-## 2、 iOS
-
-在iOS设备上，Frida支持两种使用模式，具体使用哪种模式要看你的iOS设备是否已经越狱
-
-### 2.1 已越狱设备
-
-越狱机上使用Cydia工具配置Frida
-
-> 1）启动 Cydia
->
-> 2）添加软件源：manage -> 软件源 Sources-> 编辑 Edit（左上角）-> 添加 Add（右上角）-> 输入 https://build.frida.re/
->
-> 3）通过刚才添加的软件源安装 frida 插件，注意需要根据手机进行安装：iPhone 5 及之前的机器为 32 位，5s 及之后的机器为 64 位，进入 变更 -> 找到Frida -> 进入Frida 在右上角点击安装
-
-​    
-
-### 2.2 未越狱设备
-
-frida-server在运行时需要root环境，但如果没有越狱的设备，依然可以使用frida，只需要重打包ipa文件，将frida运行库注入ipa文件中，app在启动时会自动加载frida运行库，即可实现在非越狱的设备上使用Frida。
-
-因此，为了让一个App能使用Frida，必须想办法让它加载一个 **.dylib**，就是一个 **Gadget** 模块，因此需要配置一下 **xcode** 的编译配置来让你的App可以集成Frida。当然也可以使用相关的工具来修改一个已经编译好的App， 比如 **insert_dylib** 这样的工具。
-
-... ...
-
-​      
-
-### 2.3 模拟器
-
-在模拟器中进行测试，需要把命令行中的 **-U** 替换成 **-R**，这样一来底层的内部调用也从 **get_usb_device()** 变成 **get_remote_device()**
-
-... ...
-
 ​      
 
 # 二、frida-gadget 注入
 
 frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标app加载该so文件，进而实现frida的hook功能，并且和app共生，一定程度上也免去了反调试，反frida（修改so名字，从maps看检测风险减小，或许从hook原理继续检测？先不说find_mem_string检测）的情况。
 
-​     
-
-## 1、Android
-
 ​      
 
-### 1.1 root环境
+## 1 root环境
 
 **方式一**：
 
@@ -616,11 +570,11 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 
 ​       
 
-### 1.2 非root环境
+## 2 非root环境
 
-​     
+简单介绍以下几种方式，各有优缺点
 
-#### 1）smail文件（无so文件）
+### 2.1 smail文件（无so文件）
 
 **基本原理**：方案适用于目标app没有使用so，即将frida-gadget.so放到反编译后的apk so目录下，并修改反编译后的smali文件，插入 `System.loadLibrary("frida-gadget")` 对应的smali代码，从而实现frida的加载。但是有一个弊端就是hook时机不够靠前，没有办法hook Activity 启动之前的代码。
 
@@ -825,7 +779,7 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 
 ​           
 
-#### 2）so链接（lief工具）
+### 2.2 so链接（lief工具）
 
 **基本原理**： 利用LIEF工具将frida-gadget.so与原Apk中的某个so文件链接起来，使得加载原so时，同时也加载了frida-gadget.so文件，从而实现Frida工具
 
@@ -905,7 +859,7 @@ frida-gadget的持久化，通俗理解也就是注入frida-gadget，让目标ap
 
 ​       
 
-#### 3）一键注入 Objection
+### 2.3 一键注入 Objection
 
 **基本原理**：与smail文件注入类似，也是使用 Apktool 反编译apk，然后植入代码，只是它将这个流程封装成一个工具，使用起来更方便。
 
@@ -1017,7 +971,7 @@ Objection注入报错
 
 ​         
 
-#### 4）xpatch
+### 2.4 xpatch
 
 **基本原理**：既然Xpatch可以实现免Root加载Xposed插件，那么Xpatch应该也可以实现免Root使用Frida。方法其实也比较简单，只需编写一个专门用于加载frida-gadget.so文件的 **Xposed插件**，然后使用Xpatch处理原Apk文件并安装，最后让经Xpatch处理后的Apk加载该该Xposed插件即可。
 
@@ -1101,7 +1055,7 @@ Objection注入报错
 
 ​      
 
-### 1.3 源码定制 System.load
+## 3 源码定制 System.load
 
 **操作**：源码内部引入第三方so文件 [frida-gadget.so](https://github.com/frida/frida/releases)，即将文件复制到APP项目内任意模块的 JNI libs 目录，并增加 libFG.so 初始化代码（注：可选择在hook时机更早的APP初始化阶段引入）
 
