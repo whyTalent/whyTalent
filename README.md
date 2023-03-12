@@ -1,6 +1,6 @@
 # 学习笔记
 
-<div><img src="Pictures/cover.png" alt="Cover" style="zoom:70%;" /></div>
+<div><img src="cover.png" alt="Cover" style="zoom:70%;" /></div>
 
 > The palest ink is better than the best memory
 >
