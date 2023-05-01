@@ -144,6 +144,8 @@
 
 ELMO（Embedding from Language Models），其实这个名字并没有反应它的本质思想，提出ELMO的论文题目：“[Deep contextualized word representation](https://arxiv.org/pdf/1802.05365.pdf)” 更能体现其精髓，而精髓在哪里？在deep contextualized这个短语，一个是deep，一个是context，其中context更关键。
 
+<div align="center"><img src="imgs/nlp-elmo-embedding-case.png" style="zoom:80%;" /></div>
+
 > 此前，Word Embedding本质上是个**静态**的方式，所谓静态指的是**训练好之后每个单词的表达就固定住了**，以后使用的时候，不论新句子上下文单词是什么，这个单词的Word Embedding不会跟着上下文场景的变化而改变。
 >
 > 所以，对于比如Bank这个词，它事先学好的Word Embedding中混合了几种语义 ，在应用中来了个新句子，即使从上下文中（比如句子包含money等词）明显可以看出它代表的是“银行”的含义，但是对应的Word Embedding内容也不会变，它还是混合了多种语义。这是为何说它是静态的，这也是问题所在。
@@ -162,7 +164,9 @@ ELMO（Embedding from Language Models），其实这个名字并没有反应它�
 > 上图展示的是其预训练过程，它的网络结构采用了**双层双向LSTM**，目前语言模型训练的任务目标是**根据单词Wi 的上下文去正确预测单词Wi**，Wi 之前的单词序列Context-before称为上文，之后的单词序列Context-after称为下文。
 >
 > * 图中左端的前向双层LSTM代表**正方向编码器**，输入的是从左到右顺序的除了预测单词外 Wi 的上文Context-before；
-> * 右端的逆向双层LSTM代表**反方向编码器**，输入的是从右到左的逆序的句子下文Context-after；每个编码器的深度都是两层LSTM叠加；
+> * 右端的逆向双层LSTM代表**反方向编码器**，输入的是从右到左的逆序的句子下文Context-after，每个编码器的深度都是两层LSTM叠加；
+>
+> <div align="center"><img src="imgs/nlp-elmo-new-case.png" style="zoom:80%;" /></div>
 >
 > 这个网络结构其实在NLP中是很常用的。使用这个网络结构利用大量语料做语言模型任务就能预先训练好这个网络，如果训练好这个网络后，输入一个新句子S_new，句子中每个单词都能得到对应的三个Embedding：
 >
@@ -266,9 +270,7 @@ GPT（Generative Pre-Training），从名字看其含义是指的**生成式的�
 
 ​             
 
-# 二 BERT
-
-
+# 二 BERT模型
 
 ## 1 ELMo&GPT&BERT差异
 
@@ -310,22 +312,35 @@ GPT（Generative Pre-Training），从名字看其含义是指的**生成式的�
 
 ​      
 
-## 2 BERT预训练模型
+## 2 BERT架构
 
-由上可知，BERT模型预训练采用的是双向Transformer语言模型，那对于Transformer来说，怎么才能在这个结构上做双向语言模型任务呢？
+Bert采用和GPT完全相同的两阶段模型，属于无监督的Fine-tuning方法，主要分为一下两个步骤：
 
-BERT模型，采用类似CBOW方法，其核心思想是：在做语言模型任务的时候，把要预测的单词抠掉，然后根据它的上文Context-Before和下文Context-after去预测单词。
+* **pre-training**：在大量各种任务的无标签的数据上训练语言模型；
+* **fine-tuning**：根据特定的downstream任务，给BERT模型添加输出层，使用预训练的参数对模型进行初始化，然后在该任务的有标签的数据集上对模型的参数进行微调；
 
-<div align="center"><img src="imgs/nlp-bert-pre-train.png" style="zoom:80%;" /></div>
+可以看出，pre-training部分是这个处理流程的核心，也是最需要精心设计的，这一部分学习到的representation的质量会极大地影响downstream任务中模型的performance。
 
-​        
+<div align="center"><img src="imgs/nlp-bert-model.png" style="zoom:80%;" /></div>
 
-### 2.1 输入Embedding
+即一般情况下，BERT 开发的只有两个步骤，步骤 1 在未注释的数据上预训练模型，步骤 2 对模型进行微调
 
-输入部分是个线性序列，两个句子通过分隔符分割，最前面和最后增加两个**标识符号**。每个单词有三个embedding（如下图），而后把单词对应的**三个embedding叠加**，就形成了Bert的输入：
+<div align="center"><img src="imgs/nlp-bert-model-steps.png" style="zoom:80%;" /></div>
 
-> <div align="center"><img src="imgs/nlp-bert-embedding.png" style="zoom:80%;" /></div>
->
+​         
+
+### 2.1 输入表示 Embeddings
+
+与 transformer 的普通编码器一样，BERT 将一系列单词作为输入，这些单词经过处理后不断向下一层Transformer传递，且每一层都应用self-attention机制，并通过前馈网络将结果传递给下一个编码器。
+
+<div align="center"><img src="imgs/nlp-bert-input-arc.png" style="zoom:80%;" /></div>
+
+因为要把BERT模型学习到的特征应用到不同的任务，因此需要考虑到，BERT模型的输入既可能是单个句子，也可能是一个句子对。所以相较于Transformer中 X <-- embedding(X) + PE，BERT中还需要给序列中的word添加一个特殊分隔字符**[SEP]**（两个句子通过分隔符分割），用于鉴别输入中的word是属于句子A还是句子B，并且在每个句子序列的开始位置添加一个特殊的类别标记**[CLS]**。
+
+其次，每个单词有三个embedding（如下图），而后把单词对应的**三个embedding叠加**，即输入表示 E = Token Embeddings + Segment Embeddings + Position Embeddings。
+
+<div align="center"><img src="imgs/nlp-bert-embedding.png" style="zoom:80%;" /></div>
+
 > **Token Embeddings**：词向量，第一个单词是CLS标志，可以用于之后的分类任务；
 >
 > **Segment Embeddings**：用来区别两种句子，因为前面提到训练数据都是由两个句子构成的（即预训练不光做LM，还要做以两个句子为输入的分类任务），那么每个句子有个句子整体的embedding项对应给每个单词；
@@ -334,15 +349,42 @@ BERT模型，采用类似CBOW方法，其核心思想是：在做语言模型任
 
 ​      
 
-### 2.2 Masked LM（MLM）
+### 2.2 预训练语言模型
 
-MLM可以理解为完形填空，但Masked语言模型本质思想其实是CBOW，只不过细节方面有改进。
+在这个阶段，BERT模型是在大量无标签的数据集上训练，为了使得训练好的模型能够处理应用到不同的下游任务，显然这个阶段处理之后，BERT模型既需要学习到输入单词级别的representation，也要能学习到句子级别的representation。
 
-Masked模型具体做法：
+同时，BERT模型预训练采用的是双向Transformer语言模型，那对于Transformer来说，怎么才能在这个结构上做双向语言模型任务呢？
 
-> 随机选择语料中15%的单词，把它抠掉，也就是用[Mask]掩码代替原始单词，例如 my dog is hairy → my dog is [MASK]，然后要求模型（非监督学习的方法）利用上下文去正确预测被抠掉的单词（mask位置的词）。
+<div align="center"><img src="imgs/nlp-bert-pre-train.png" style="zoom:80%;" /></div>
+
+两个任务目的：
+
+* **Masked LM（MLM）**：为了训练双向语言模型，学习到单词级别（word-level）的特征表示；
+* **Next Sentence Prediction (NSP)**：为了理解两个句子之间的联系（这个联系在语言建模的过程中不能捕获），学习到句子级别（sentence-level）的特征表示；
+
+​      
+
+#### 2.1.2 Masked LM（MLM）
+
+但在 BERT 之前，语言模型训练只能单向进行（仅按照left-to-right或者right-to-left的方式），且双向调节允许每个词间接地 “看到自己”，并且在多层上下文中，模型可以简单地预测目标词。换句话说，如果进行双向训练，掩蔽根本不会有效。
+
+> Before BERT, language model training can only be done uni-directionally. It was not possible to train Transformer bi-directionally because "bidirectional conditioning would allow each word to indirectly 'see itself', and the model could trivially predict the target word in a multi-layered context". In other words, masking would not be effective at all if you train bidirectionally.
+
+<div align="center"><img src="imgs/nlp-different-models.png" style="zoom:80%;" /></div>
+
+因此，为了训练深度双向表示，作者设计了MLM任务，这个任务又被称为Cloze task（完形填空），其本质思想其实是CBOW，只不过细节方面有改进
+
+> CBOW核心思想：在做语言模型任务的时候，把要预测的单词抠掉，然后根据它的上文Context-Before和下文Context-after去预测单词
+
+​      
+
+Mask具体操作：
+
+> 随机mask掉输入序列或选择语料中15%的token，也就是用[Mask]掩码代替原始单词，例如 my dog is hairy → my dog is [MASK]，然后要求模型（非监督学习的方法）利用上下文去正确预测被抠掉的单词（mask位置的词）。
 >
-> **但是这里有个问题**：训练过程大量看到[mask]标记，但是在之后fine-tuning阶段是不会有这个标记的，这会引导模型认为输出是针对[mask]这个标记的，但是实际使用又见不到这个标记，这自然会有问题。
+> **但有个问题**：训练过程大量看到[mask]标记，但是在之后fine-tuning阶段是不会有这个标记的，这会引导模型认为输出是针对[mask]这个标记的，但是实际使用又见不到这个标记，这自然会有问题。
+>
+> <div align="center"><img src="imgs/nlp-bert-masked-lm.png" style="zoom:80%;" /></div>
 >
 > 为了避免这个问题，Bert改造了一下，即对**已选择的15%单词**进行以下处理：
 >
@@ -350,15 +392,23 @@ Masked模型具体做法：
 > * 10%是随机取一个词来代替mask的词，my dog is hairy -> my dog is apple
 > * 10%保持不变，my dog is hairy -> my dog is hairy
 >
-> <div align="center"><img src="imgs/nlp-bert-masked-lm.png" style="zoom:80%;" /></div>
+> <div align="center"><img src="imgs/nlp-bert-masked-lm-case.png" style="zoom:80%;" /></div>
 
-那么为啥要以一定的概率使用随机词呢？这是因为 **transformer要保持对每个输入token分布式的表征**，否则Transformer很可能会记住这个[MASK]就是"hairy"。至于使用随机词带来的负面影响，文章中解释说，所有其他的token（即非"hairy"的token）共享15%*10% = 1.5%的概率，其影响是可以忽略不计的。Transformer全局的可视，又增加了信息的获取，但是不让模型获取全量信息。
+​       
+
+**注意：**
+
+* 1）BERT模型并不知道输入序列中哪些tokens被mask掉，每个token都有可能被mask掉（但是输入序列被mask处理后，BERT模型会知道预测哪些tokens，这些原始真实的tokens作为监督信息），这样就会使模型在对序列中每个时间步的token编码时，不仅要利用当前token的信息，还要能够捕获并充分利用全局上下文的语义信息，在MLM这个任务中，甚至还对当前token具有一定的纠错能力。
+* 2）此外，MLM任务中只预测那些被mask掉的tokens(15%)，而不是整个句子，这样会导致模型的收敛速度比一般的left-to-right模型（预测序列中所有的token）慢，但是会捕获到真正意义上的双向context信息（相较于ELMo），给MLM带来巨大的改进优化。
+* 3）那么为啥要以一定的概率使用随机词呢？这是因为 **transformer要保持对每个输入token分布式的表征**，否则Transformer很可能会记住这个[MASK]就是"hairy"。至于使用随机词带来的负面影响，文章中解释说，所有其他的token（即非"hairy"的token）共享15%*10% = 1.5%的概率，其影响是可以忽略不计的。Transformer全局的可视，又增加了信息的获取，但是不让模型获取全量信息。
 
 ​      
 
-### 2.3 Next Sentence Prediction（NSP）
+#### 2.1.3 Next Sentence Prediction（NSP）
 
-指的是做语言模型预训练的时候，分两种情况选择两个句子
+即要求模型除了做上述的Masked语言模型任务外，附带再做个**句子关系预测**，判断第二个句子是不是真的是第一个句子的后续句子。之所以这么做，是考虑到很多NLP任务是句子关系判断任务，单词预测粒度的训练到不了句子关系这个层级，增加这个任务有助于下游句子关系判断任务。所以可以看到，它的预训练是个**多任务过程**，这也是Bert的一个创新。
+
+NSP一个**二值预测任务**，在一个单语言语料库中挑选出句子A和句子B，句子B有50%的可能性是句子A的下一个句子，50%的可能性不是句子A的下一个句子。根据transformer 编码结构，序列中特殊字符[CLS]的隐含状态是由序列中各个token的信息加权求和得到的，因此[CLS]最后的**隐含状态C**能够表征整个序列的语义信息，可以用于分类任务。在NSP任务中，就是把C送入到输出层，做二值预测。
 
 > <div align="center"><img src="imgs/nlp-bert-nsp.png" style="zoom:80%;" /></div>
 >
@@ -367,30 +417,41 @@ Masked模型具体做法：
 > 2）另外一种是第二个句子从语料库中抛色子，随机选择一个拼到第一个句子后面；
 >
 > 总的来说，就是选择一些句子对 A与B，其中50%的数据B是A的下一条句子，剩余50%的数据B是语料库中随机选择的。
-
-即要求模型除了做上述的Masked语言模型任务外，附带再做个**句子关系预测**，判断第二个句子是不是真的是第一个句子的后续句子。之所以这么做，是考虑到很多NLP任务是句子关系判断任务，单词预测粒度的训练到不了句子关系这个层级，增加这个任务有助于下游句子关系判断任务。所以可以看到，它的预训练是个**多任务过程**，这也是Bert的一个创新。
+>
+> <div align="center"><img src="imgs/nlp-bert-nsp-case.png" style="zoom:80%;" /></div>
 
 ​      
 
-### 2.4 Output部分
+#### 2.1.4 Output部分
 
 Bert在预训练的输出部分如下所示：
 
 <div align="center"><img src="imgs/nlp-bert-pre-train-output.png" style="zoom:80%;" /></div>
 
+例如：
+
+> 对于句子分类示例，预训练模型输出的第一个单词结果如下（即标记为 [CLS]的单词）
+>
+> <div align="center"><img src="imgs/nlp-bert-pre-train-case-sc.png" style="zoom:80%;" /></div>
+>
+> 而后可把这个向量用作模型选择的分类器的输入，最后通过基于单层神经网络的分类器就可以取得了很好的分类效果。
+>
+> <div align="center"><img src="imgs/nlp-bert-pre-train-case-sc-next.png" style="zoom:80%;" /></div>
+>
+> 而在**计算机视觉领域**，句子分类可使用VGG 神经卷积网络结构进行预测
+>
+> <div align="center"><img src="imgs/nlp-vggnet-case.png" style="zoom:80%;" /></div>
+
 ​        
 
-## 3 BERT Fine-Tuning模式
+### 2.2 BERT Fine-Tuning模型
 
 已知，目前NLP问题可大致分为四类任务：
 
-> 1）**序列标注**：这是最典型的NLP任务，比如中文分词，词性标注，命名实体识别，语义角色标注等都可以归入这一类问题，它的特点是句子中每个单词要求模型根据上下文都要给出一个分类类别；
->
-> 2）**分类任务**：比如常见的文本分类，情感计算等都可以归入这一类。它的特点是不管文章有多长，总体给出一个分类类别即可；
->
-> 3）**句子关系判断**：比如Entailment，QA，语义改写，自然语言推理等任务都是这个模式，它的特点是给定两个句子，模型判断出两个句子是否具备某种语义关系；
->
-> 4）**生成式任务 或 阅读理解**：比如机器翻译，文本摘要，写诗造句，看图说话等都属于这一类，它的特点是输入文本内容后，需要自主生成另外一段文字；
+* 1）**序列标注**：这是最典型的NLP任务，比如中文分词，词性标注，命名实体识别，语义角色标注等都可以归入这一类问题，它的特点是句子中每个单词要求模型根据上下文都要给出一个分类类别；
+* 2）**分类任务**：比如常见的文本分类，情感计算等都可以归入这一类。它的特点是不管文章有多长，总体给出一个分类类别即可；
+* 3）**句子关系判断**：比如Entailment，QA，语义改写，自然语言推理等任务都是这个模式，它的特点是给定两个句子，模型判断出两个句子是否具备某种语义关系；
+* 4）**生成式任务 或 阅读理解**：比如机器翻译，文本摘要，写诗造句，看图说话等都属于这一类，它的特点是输入文本内容后，需要自主生成另外一段文字；
 
 ​         
 
@@ -414,7 +475,7 @@ Bert在预训练的输出部分如下所示：
 
 ​      
 
-## 4 BERT的评价
+## 3 BERT的评价
 
 **BERT主要贡献**
 
