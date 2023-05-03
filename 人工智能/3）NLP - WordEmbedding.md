@@ -281,11 +281,11 @@ John also likes to watch football games.
 
 ​       
 
-## 1 共现矩阵
+## 1 GloVe
 
-共现矩阵顾名思义就是共同出现的意思，词文档的共现矩阵主要用于发现主题(topic)，用于主题模型，如LSA。
+GloVe（Globel Vectors）算法，其实就是SVD分解与Word2Vec的结合。在介绍GloVe的思想之前，我们先定义一个共现矩阵𝑋，该矩阵中的 𝑋(𝑖, 𝑗) 表示**第 𝑗 个单词出现在以第 𝑖 个单词为中心，长度为𝑛的窗口中的次数**，而后将长度为n的窗口遍历整个语料库，则得到了共现矩阵𝑋。
 
-局域窗中的word-word共现矩阵可以挖掘语法和语义信息，例如：
+例如：
 
 ```python
 // a. 文本内容
@@ -301,9 +301,19 @@ I enjoy flying
 
 <div align="center"><img src="imgs/nlp-corpus.png" style="zoom:80%;" /></div>
 
-​    
+​       
 
-**存在的问题：**
+对于大型语料库，可以认为统计的 **词共现矩阵X可以很好的描述词与词之间的相关性**，但是这样大的一个共现矩阵在实际使用中将会面临复杂的 **维度灾难问题**，因此需要想办法词向量进行降维，比如奇异值分解SVD对词-文档共现矩阵进行降维就是这样一种思想。
+
+而对于word2vec，每次训练词向量，都是针对于局部语料进行预测（根据局部上下文预测中心词，或根据中心词预测局部上下文），这就使得模型的训练过程中是很难考虑到整个语料库的全局信息的。因此，通常将其称为一种预测模型（predictive model），其目标是不断提高对其他词的预测能力，即减小预测损失，从而得到词向量。
+
+那有没有一种方法，既能通过**训练的方式得到固定维度的词向量表征**，又能够使得到的**词向量能够充分考虑到语料库的全局特征**？因此提出了GloVe模型
+
+简单来说，Glove相对于Word2Vec，需要提前统计**词共现矩阵**，并将其**整合到代价函数**之中，使得训练结果对于该统计是有一定的重建能力的。便将其称为一种统计模型（count-based model），其目标是**优化减小重建损失**（reconstruction loss），即**降维之后的向量能尽量表达原始向量的完整信息**。
+
+​       
+
+但**存在的问题：**
 
 > 1）向量维数随着词典大小线性增长；
 >
@@ -490,25 +500,23 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 ## 3 语言模型 Language Modeling
 
-如果要举自然语言处理最典型的例子，那应该就是智能手机输入法中的**下一单词预测功能**，这是个被数十亿人每天使用上百次的功能。
+自然语言处理最典型例子：智能手机输入法中的**下一单词预测功能**，这是个被数十亿人每天使用上百次的功能。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-case.png" style="zoom:80%;" /></div>
 
-下一单词预测是一个可以通过语言模型实现的任务，模型会通过单词列表（比如说两个词）去尝试预测可能紧随其后的单词。如上这个截屏中，可以认为模型接收到两个绿色单词（thou shalt）并推荐了一组单词（“not” 就是其中最有可能被选用的一个）：
+下一单词预测是一个可以通过语言模型实现的任务，模型会通过单词列表（比如说两个词）去尝试预测可能紧随其后的单词，如上图截屏中，可以认为模型接收到两个绿色单词（thou shalt），并推荐了一组单词（“not” 就是其中最有可能被选用的一个）：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-case-pre.png" style="zoom:80%;" /></div>
 
-可以把这个模型想象为这个黑盒:
+可以把这个模型想象以下黑盒:
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-case-model.png" style="zoom:80%;" /></div>
 
-但事实上，该模型不会只输出一个单词，而是计算出模型词库中所有可能输出单词的概率分数（可能有几千到几百万个单词），而后选出其中分数最高的推荐给用户。
+但事实上，模型不会只输出一个单词，而是计算出模型词库中所有可能输出单词的概率分数（可能有几千到几百万个单词），而后选出分数最高的词推荐给用户。其次，NLP模型的输出其实是模型所知单词的概率评分，通常以百分比形式表示其输出概率，但在模型输出向量组中，实际上40%表示为0.4。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-case-model-all.png" style="zoom:80%;" /></div>
 
-自然语言模型的输出就是模型所知单词的概率评分，通常把概率按百分比表示，但实际上，40%这样的分数在输出向量组是表示为0.4。
-
-早期自然语言模型（如：Bengio 2003），经过训练后会按如下三步骤进行预测：
+同时，早期自然语言模型（如：Bengio 2003），经过训练后会按如下三步骤进行预测：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-early-steps.png" style="zoom:80%;" /></div>
 
@@ -524,9 +532,9 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 > *A process cannot be understood by stopping it. Understanding must move with the flow of the process, must join it and flow with it.*
 
-相较于大多数其他机器学习模型，语言模型有一个很大有优势，那就是我们有丰富的文本来训练语言模型，包括书籍、文章、维基百科、及各种类型的文本内容都可用，因此相比之下，许多其他机器学习的模型开发就需要手工设计数据或者专门采集数据。
+相较于大多数其他机器学习模型，语言模型有一个很大有优势，那就是有丰富的文本内容来训练语言模型，包括书籍、文章、维基百科、及各种类型的文本内容，而相比之下，许多其他机器学习的模型开发需要手工设计数据或者专门采集数据。
 
-通常找出出现在每个单词附近的词，就能获得它们的映射关系。机制如下：
+通常情况下，如果找出出现在每个单词附近的词，那就能获得样本词间的映射关系。大致流程如下：
 
 > 1. 先是获取大量文本数据（例如：维基百科内容）；
 > 2. 然后建立一个可以沿文本滑动的窗（例如：一个窗里包含三个单词）；
@@ -534,7 +542,7 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-text-data.png" style="zoom:80%;" /></div>
 
-当这个窗口沿着文本滑动时，就可生成一套用于模型训练的数据集，为了明确理解这个过程，来看下滑动窗是如何处理这个短语的：
+当这个窗口沿着文本滑动时，就可生成一套用于模型训练的数据集，为了明确这个过程，来看下滑动窗是如何处理这个短语的：
 
 > 在一开始的时候，窗口锁定在句子的前三个单词上，并把前两个单词单做**特征**，第三个单词单做**标签**label，从此生成了数据集中的第一个样本，用在后续的语言模型训练中。
 >
@@ -580,7 +588,7 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-cbow-case-model.png" style="zoom:80%;" /></div>
 
-然后还有另一种架构，它不根据前后文（前后单词）来猜测目标单词，而是**推测当前单词可能的前后单词**，设想一下滑动窗在训练数据时如下图所示（绿框中的词语是输入词，粉框则是可能的输出结果）：
+然后还有另一种架构，不是根据前后文（前后单词）来猜测目标单词，而是**推测当前单词可能的前后单词**，设想一下滑动窗在训练数据时如下图所示（绿框中的词语是输入词，粉框则是可能的输出结果）：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-skipgram-pre.png" style="zoom:80%;" /></div>
 
@@ -606,27 +614,27 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 ## 7 重新审视训练过程
 
-现在已经从现有的文本中获得了Skipgram模型的训练数据集，接下来看看如何使用它来训练一个能**预测相邻词汇**的自然语言模型。
+现在已经从现有的文本中获得了Skipgram模型的训练数据集，那接下来看看如何使用它来训练一个能**预测相邻词汇**的自然语言模型。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-skipgram-map.png" style="zoom:80%;" /></div>
 
-而后从数据集中的第一个样本开始，将特征输入到未经训练的模型，让它预测一个可能的相邻单词
+即从数据集中的第一个样本开始，将特征输入到**未训练的模型**，让它预测一个可能的相邻单词
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-model-predict.png" style="zoom:80%;" /></div>
 
-该模型会执行三个步骤并输入预测向量（对应于单词表中每个单词的概率），由于模型未经训练，所以该阶段的预测肯定是错误的。但没关系，我们知道应该猜出的是哪个单词，这个词就是训练集数据中的输出标签（PS：“目标向量” 中目标单词概率为1，其他所有单词概率为0）。
+模型经过三个步骤执行，后计算输出得到一个预测向量（对应单词表中每个单词的概率），但由于模型未经训练，所以该阶段预测结果肯定是错误的，但基于训练集数据中的结果标签，实际上训练前我们已知任务最后会输出哪个词（PS：“目标向量” 中目标单词概率为1，其他所有单词概率为0）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-target&prefict.png" style="zoom:80%;" /></div>
 
-**模型的偏差有多少**？将两个向量相减即可得到 **偏差向量**：
+从任务结果预测向量和实际样本标签数据，可知 **模型偏差向量=实际样本向量 - 模型预测向量** ：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-vector-off.png" style="zoom:80%;" /></div>
 
-现在这一误差向量可以被用于更新模型了，所以在下一轮预测中，如果用not作为输入，那么更有可能得到thou作为输出了。
+而后使用误差向量Error用于更新任务模型了，即在下一轮预测中，如果用 "not" 作为输入，那么更有可能得到 "thou" 作为输出了，而这其实就是训练的第一步。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-vector-off-update.png" style="zoom:80%;" /></div>
 
-这其实就是训练的第一步了，而后继续对数据集内下一份样本进行同样的操作，直到遍历所有的样本为止，这一过程就是**一轮（epoch）**。如果再多做几轮（epoch），得到训练过的模型，于是就可以从中提取嵌入矩阵来用于其他应用了。虽然以上确实有助于理解整个流程，但这依然不是word2vec真正训练的方法。
+最后继续对数据集内下一份样本进行同样的操作，直到遍历所有的样本为止，这一过程称之为 **一轮（epoch）**。如果再多做几轮（epoch），就可得到训练过的模型，最后将模型输出的Embedding矩阵用于其它训练任务。虽然以上确实有助于理解整个流程，但这依然不是word2vec真正训练的方法。
 
 ​       
 
@@ -636,34 +644,36 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-pre-model.png" style="zoom:80%;" /></div>
 
-从计算的角度来看，第三步非常昂贵，尤其是需要在数据集中为每个训练样本都做一遍（很容易就多达数千万次），因此需要寻找提高性能的方法。
+但从计算的角度来看，第三步非常昂贵，尤其是需要在数据集中为每个训练样本都做一遍（很容易就多达数千万次），因此需要寻找提高性能的方法。
 
-一种方法是将目标分为两个步骤：
+常见的一种方法是将目标分为两个步骤：
 
-> 1. 生成**高质量的词嵌入**（不要担心下一个单词预测）；
-> 2. 使用这些**高质量的embeddings来训练语言模型**（进行下一个单词预测）；
+> 1. 生成**高质量的词embedding**（不要担心下一个单词预测）；
+> 2. 使用这些**高质量的embedding来训练语言模型**（进行下一个单词预测）；
 
-在本文中将专注于第1步，即使用高性能模型生成高质量嵌入，因此可以改变一下预测相邻单词这一任务：
+如果使用高性能模型生成高质量embedding，那么可以稍微调整一下预测相邻单词任务：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-pre-next.png" style="zoom:80%;" /></div>
 
-将其切换到一个提取输入与输出单词的模型，并输出一个表明它们是否是邻居的分数（0表示“不是邻居”，1表示“邻居”）。
+即将其切换到一个提取输入与输出单词的模型，并输出一个表明它们是否是邻居的分数（0表示“不是邻居”，1表示“邻居”）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-extract-model.png" style="zoom:80%;" /></div>
 
-这个简单的变换将任务模型从 **神经网络 **改为 **逻辑回归模型**，因此它变得更简单，计算速度更快。但这个开关要求我们切换数据集的结构，即新增一个值为0或1的新标签列，由于添加的所有单词都是邻居，所以可初始化均为1。
+这个转换则是将任务模型从 **神经网络 **改为 **逻辑回归模型**，使得任务更简单且计算速度更快，但需要更新数据集的结构，新增一个值为0或1的标签列，以满足任务模型执行需要（PS：所有添加的单词都是邻居，初始化为1）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-data-format.png" style="zoom:80%;" /></div>
 
-现在的计算速度可谓是神速啦，在几分钟内就能处理数百万个例子，但是还需要解决一个漏洞，即如果所有的例子都是邻居（目标：1），那模型可能会被训练得永远返回1，准确性是百分百了，但它什么东西都学不到，只会产生垃圾嵌入结果。
+虽然模型计算速度有提升，几分钟内能处理数百万个例子，但仍需要解决一个**漏洞**：即如果所有例子都是邻居（target=1），那模型可能会被训练得永远返回1，准确性百分百，导致模型未学到任何内容，仅生成了垃圾embeddings结果（如下图）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-problem.png" style="zoom:80%;" /></div>
 
-所以为了解决这个问题，模型需要在数据集中引入负样本 （不是邻居的单词样本），即对于数据集中的每个样本，都添加了负面示例，标签为0。
+所以为了解决此问题，需要在模型数据集中引入**负样本** （不是邻居的单词样本），即对数据集中的每个样本词，都添加了负面样例（target=0）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-negative-sample.png" style="zoom:80%;" /></div>
 
-而后从词汇表中 **随机抽取单词** 作为结果输出，其想法灵感来自噪声对比估计，即将实际信号（相邻单词的正例）与噪声（随机选择的不是邻居的单词）进行对比。
+而后，参考**噪声对比评估**的思想，随机从词汇表中 **抽取单词** 作为embeddings结果输出，
+
+> [噪声对比评估](http://proceedings.mlr.press/v9/gutmann10a/gutmann10a.pdf)：将实际信号（相邻单词的正例）与噪声（随机选择的不是邻居的单词）进行对比
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-random-sample.png" style="zoom:80%;" /></div>
 
@@ -671,55 +681,72 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 
 ## 9 Word2vec训练流程
 
-现在已经了解了word2vec中的两个核心思想：**负例采样** 和 **skipgram**，接下来可以研究实际的word2vec训练过程了
+现在已经了解了word2vec中的两个核心思想：**负例采样** 和 **skipgram**，接下来看一下word2vec模型的实际训练过程：
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-two-model.png" style="zoom:80%;" /></div>
 
-在训练过程开始之前，需要预先处理正在训练模型的文本，并在这一步中确定一下词典的大小（称之为vocab_size，比如说10,000），以及哪些词被它包含在内。
+1）在训练前，需要预先处理正在训练模型的文本，并在这一步中确定一下词典的大小（称之为vocab_size，比如说10,000），以及哪些词被它包含在内。
 
-在训练阶段开始时，创建两个矩阵（Embedding和Context矩阵），这两个矩阵包含了词汇表中每个单词的embedding。
+2）在训练开始时，创建两个包含**词汇表中每个单词的embedding**的矩阵（Embedding和Context矩阵），大小为 vocab_size * embedding_size。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-two-matrixs.png" style="zoom:80%;" /></div>
 
-在训练过程开始时，用随机值初始化这些矩阵，然后开始训练，并且在每个训练步骤中采用一个正例（positive example）及其相关的负例样本（negative examples）。
+其次，用**随机值**初始化这些矩阵，而后开始训练，并且在每一训练步骤中，使用一个正例（positive example）和相关的负例样本（negative examples）进行训练（如下第一组训练数据）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-dataset.png" style="zoom:80%;" /></div>
 
-现有四个单词：输入单词not 和 输出/上下文单词: thou（实际邻居词），aaron和taco（负面例子）。
+3）确定随机样本词的embeddings
 
-而后分别从Embedding和Context矩阵中寻找这几个单词的embeddings，即使词汇表中每个单词的Embedding均包含在两个矩阵中：
+* **输入单词**： "not" ，从Embedding矩阵中查找；
+* **输出/上下文单词**："thou"（实际邻居词），"aaron" 和 "taco"（负面例子），从Context矩阵中查找；
 
-> 输入词：查看Embedding矩阵；
->
-> 输出/上下文单词：查看Context矩阵；
+PS：词汇表中每个单词的Embedding均包含在两个矩阵中
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-lookup.png" style="zoom:80%;" /></div>
 
-然后计算输入嵌入与每个上下文嵌入的点积，其结果表示的是  **输入和上下文嵌入的相似性 **概率值。
+4）然后计算输入样本 embedding 与每个上下文样本embedding的点积，得到结果表示的是  **输入和上下文embedding的相似性 **值。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-embedding-dot.png" style="zoom:80%;" /></div>
 
-而后使用逻辑函数 **sigmoid** 将上述概率值进行归一化处理，得到的结果即为模型输出，可以看到无论是sigmoid操作之前还是之后，taco得分最高，aaron最低。
+5）而后使用逻辑函数 **sigmoid** 将上述概率值进行归一化处理，得到的结果作为**模型输出**，可以看到无论是sigmoid操作之前还是之后，taco得分最高，aaron最低。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-embedding-dot-softmax.png" style="zoom:80%;" /></div>
 
-而后，计算模型预测误差 = target标签 - sigmoid分数
+6）而后，计算模型 **预测误差 = target - sigmoid_scrores**
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-embedding-error.png" style="zoom:80%;" /></div>
 
-最后，模型利用这个错误分数来调整更新not、thou、aaron和taco的embeddings，使模型在下一次计算时，得到结果会更接近目标分数。
+7）最后，模型利用这个误差分数来调整更新not、thou、aaron和taco这4个样本词embeddings，使模型在下一次计算时，得到结果会更接近目标分数。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-embedding-error-update.png" style="zoom:80%;" /></div>
 
-第一个样本训练步骤到此结束，而后使用更新后的embeddings（not，thou，aaron和taco）继续下一个样本集的训练（样本训练步骤一致）。
+8）至此第一个样本训练步骤结束，而后使用更新后的embeddings（not，thou，aaron和taco）继续下一个样本集的训练（样本训练步骤一致）。
 
 <div align="center"><img src="imgs/nlp-word2vec-lm-dataset-update.png" style="zoom:80%;" /></div>
 
-经过多次循环遍历完整个数据集后，embeddings不断更新，最后停止训练过程，丢弃Context矩阵，并使用 Embeddings 矩阵作为模型下一个任务预训练的embeddings。
+9）经过多次循环遍历完整个数据集后，embeddings不断更新，最后停止训练过程，丢弃Context矩阵，并使用 Embeddings 矩阵作为模型下一个任务预训练的embeddings。
 
-​     
+​        
 
-​       
+## 10 窗口大小和负样本数量
+
+word2vec训练过程中的两个关键超参数是 **滑动窗口大小** 和 **负样本数量**
+
+<div align="center"><img src="imgs/nlp-word2vec-lm-training-win-size.png" style="zoom:80%;" /></div>
+
+但不同任务适合不同的窗口大小，通常情况下会存在以下情况：
+
+> 较小的窗口大小（2-15）：两个样本embeddings高相似性分数表示这些词可以互换（PS：反义词在只查看它们周围单词时经常可以互换，例如好的和坏的经常出现在类似的语境中）
+>
+> 较大的窗口大小（15-50，甚至更多）：样本embeddings相似性更能反映单词的相关性；
+
+其次，负样本数量也是训练训练过程的另一个重要参数，原论文认为5-20个负样本是比较理想的数量，且还指出，当拥有足够大的数据集时，2-5个似乎就已经足够了（Gensim默认为5个负样本）。
+
+<div align="center"><img src="imgs/nlp-word2vec-lm-training-negative-size.png" style="zoom:80%;" /></div>
+
+​         
+
+​    
 
 # 附录
 
@@ -733,4 +760,5 @@ word2vec模型的问题在于词语的多义性，比如duck这个单词常见�
 6. [NLP+2vec︱认识多种多样的2vec向量化模型](https://cloud.tencent.com/developer/article/1020400)
 7. [The Illustrated Word2vec](https://jalammar.github.io/illustrated-word2vec/)
 8. [图解Word2vec，读这一篇就够了](https://mp.weixin.qq.com/s?__biz=MjM5MTQzNzU2NA==&mid=2651669277&idx=2&sn=bc8f0590f9e340c1f1359982726c5a30&chksm=bd4c648e8a3bed9817f30c5a512e79fe0cc6fbc58544f97c857c30b120e76508fef37cae49bc&scene=0&xtrack=1#rd)
+9. [词向量(one-hot/SVD/NNLM/Word2Vec/GloVe)](https://www.cnblogs.com/sandwichnlp/p/11596848.html)
 
