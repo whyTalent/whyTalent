@@ -6,7 +6,7 @@
 
 ​     
 
-#### **如有侵权可删，望请周知 [抱拳]！！！ **
+#### **如有侵权可删，望请谅解 [抱拳]！！！ **
 
 
 
@@ -22,4 +22,5 @@
 | B站课程                                                      | [陈天奇机器学习](https://space.bilibili.com/1663273796)：深入浅出讲解深度学习编译、系统方面的抽象和实现 |
 |                                                              | [跟李沐学AI](https://space.bilibili.com/1567748478)：深入浅出讲解深度学习算法、系统方面的经典论文 |
 | 知乎专栏                                                     | [张俊林-NLP](https://www.zhihu.com/people/zhang-jun-lin-76)  |
+| 编程GitHub                                                   | [tensorflow_practice](https://github.com/princewen/tensorflow_practice) |
 

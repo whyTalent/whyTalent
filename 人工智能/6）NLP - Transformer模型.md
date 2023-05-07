@@ -247,3 +247,5 @@ Normalization有很多种，但是它们都有一个共同的目的，那就是�
 2. [Transformer模型详解](https://terrifyzhao.github.io/2019/01/11/Transformer%E6%A8%A1%E5%9E%8B%E8%AF%A6%E8%A7%A3.html)
 3. [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 4. [The Annotated Transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html)
+5. [关于Transformer模型中的各种细节详解](https://www.cnblogs.com/zjuhaohaoxuexi/p/15991787.html)
+6. [Github: learn-nlp-with-transformers](https://github.com/datawhalechina/learn-nlp-with-transformers/tree/main/docs)
