@@ -7,6 +7,7 @@
 * [CharonChui - Android学习笔记](https://github.com/CharonChui/AndroidNote)
 * [音视频流媒体学习资料](https://github.com/0voice/audio_video_streaming)
 * [GcsSloop - AndroidNote](https://github.com/GcsSloop/AndroidNote)
+* [GIthub: digital videointroduction](https://github.com/leandromoreira/digital_video_introduction/blob/master/README-cn.md)
 
 
 
